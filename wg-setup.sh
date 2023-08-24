@@ -568,31 +568,34 @@ function displayConnectedClients() {
     echo "| Client IP                       | Last Handshake    | Status              |"
     echo "+---------------------------------+-------------------+---------------------+"
 
-    wg show ${SERVER_WG_NIC} dump | tail -n +2 | while read -r line; do
-        client_ip=$(echo "$line" | awk '{print $5}' | cut -d ',' -f 1)
-        last_handshake=$(echo "$line" | awk '{print $6}')
+    wg show "${SERVER_WG_NIC}" dump | grep allowed | while read -r line; do
+        client_public_key=$(echo "$line" | awk '{print $1}')
+        handshake_time=$(echo "$line" | awk '{print $5}')
 
-        if [[ "$client_ip" == "(none)" ]]; then
+        # IP extraction logic
+        client_ip=$(echo "$line" | awk '{print $4}' | cut -d ',' -f 1)
+        # If there's a / in the client IP, strip it out along with everything after
+        if [[ "$client_ip" == *"/"* ]]; then
+            client_ip="${client_ip%%/*}"
+        fi
+        # If the client_ip is still 'off' or '(none)', set to "Not Connected"
+        if [[ "$client_ip" == "off" || "$client_ip" == "(none)" ]]; then
             client_ip="Not Connected"
         fi
 
-        if [[ "$last_handshake" == "0" || ! "$last_handshake" =~ ^[0-9]+$ ]]; then
-            handshake="Never"
-        else
-            handshake=$(date -d @"$last_handshake" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "Invalid Date")
-        fi
-
-        if [[ "$handshake" == "Never" ]]; then
+        # Display handshake time
+        if [[ "$handshake_time" == "0" ]]; then
+            handshake_display="Never"
             status="Never Connected"
         else
+            handshake_display=$(date -d @"${handshake_time}" +"%b %d %Y %T %Z")
             status="Connected Before"
         fi
-
-        echo "| ${client_ip:0:32} | ${handshake:0:19} | ${status:0:19} |"
+        echo "| ${client_ip:0:32} $(printf '%*s' $((33-${#client_ip})) "") | ${handshake_display:0:17} $(printf '%*s' $((18-${#handshake_display})) "") | ${status} $(printf '%*s' $((19-${#status})) "") |"
     done
-
     echo "+---------------------------------+-------------------+---------------------+"
 }
+
 
 
 function manageMenu() {
