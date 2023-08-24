@@ -633,7 +633,7 @@ function displayConnectedClients() {
         if .value.latestHandshake == 0 then
             "\(.value.allowedIps[0]) | Never | Never Connected | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring)"
         elif .value.latestHandshake | type == "number" then
-            "\(.value.allowedIps[0]) | \(.value.latestHandshake | todate) | Connected | \(.value.endpoint // "Not set") | \( ((.value.transferRx // 0) + (.value.transferTx // 0)) / 1048576 | tostring + " MB")"
+            "\(.value.allowedIps[0]) | \(.value.latestHandshake | todate) | Connected | \(.value.endpoint // "Not set") | \( ((.value.transferRx // 0) + (.value.transferTx // 0)) / 1048576 | bc | tostring + " MB")"
         else
             "\(.value.allowedIps[0]) | Never | Never Connected | Not set | 0"
         end' | while read line; do
