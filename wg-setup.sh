@@ -564,37 +564,27 @@ function disableIPv6Use() {
 }
 
 function displayConnectedClients() {
+    # Assuming wg-json script is executable and in /etc/wireguard
+    local wg_json_output
+    wg_json_output=$(/etc/wireguard/wg-json)
+
     echo "+---------------------------------+-------------------+---------------------+"
     echo "| Client IP                       | Last Handshake    | Status              |"
     echo "+---------------------------------+-------------------+---------------------+"
 
-    wg show "${SERVER_WG_NIC}" dump | grep allowed | while read -r line; do
-        client_public_key=$(echo "$line" | awk '{print $1}')
-        handshake_time=$(echo "$line" | awk '{print $5}')
-
-        # IP extraction logic
-        client_ip=$(echo "$line" | awk '{print $4}' | cut -d ',' -f 1)
-        # If there's a / in the client IP, strip it out along with everything after
-        if [[ "$client_ip" == *"/"* ]]; then
-            client_ip="${client_ip%%/*}"
-        fi
-        # If the client_ip is still 'off' or '(none)', set to "Not Connected"
-        if [[ "$client_ip" == "off" || "$client_ip" == "(none)" ]]; then
-            client_ip="Not Connected"
-        fi
-
-        # Display handshake time
-        if [[ "$handshake_time" == "0" ]]; then
-            handshake_display="Never"
-            status="Never Connected"
-        else
-            handshake_display=$(date -d @"${handshake_time}" +"%b %d %Y %T %Z")
-            status="Connected Before"
-        fi
-        echo "| ${client_ip:0:32} $(printf '%*s' $((33-${#client_ip})) "") | ${handshake_display:0:17} $(printf '%*s' $((18-${#handshake_display})) "") | ${status} $(printf '%*s' $((19-${#status})) "") |"
+    # Parsing the JSON using jq
+    echo "$wg_json_output" | jq -r 'to_entries[] | .value.peers | to_entries[] | "\(.value.allowedIps[0]) | \((if .value.latestHandshake then (.value.latestHandshake | tonumber | strftime("%Y-%m-%d %H:%M:%S")) else "Never" end)) | \((if .value.latestHandshake then "Connected" else "Never Connected" end))" ' | while read line; do
+        echo "| $line |"
     done
+
     echo "+---------------------------------+-------------------+---------------------+"
 }
+
+
+
+
+
+
 
 
 
