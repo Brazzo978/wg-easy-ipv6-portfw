@@ -150,24 +150,22 @@ function installQuestions() {
 }
 
 function installWireGuard() {
-    # Run setup questions first
-    installQuestions
+	# Run setup questions first
+	installQuestions
 
-    # Install WireGuard tools and module
-    if [[ ${OS} == 'ubuntu' ]] || [[ ${OS} == 'debian' && ${VERSION_ID} -gt 10 ]]; then
+	# Install WireGuard tools and module
+if [[ ${OS} == 'ubuntu' ]] || [[ ${OS} == 'debian' && ${VERSION_ID} -gt 10 ]]; then
+    apt-get update
+    apt-get install -y wireguard iptables resolvconf qrencode
+elif [[ ${OS} == 'debian' ]]; then
+    if ! grep -rqs "^deb .* buster-backports" /etc/apt/; then
+        echo "deb http://deb.debian.org/debian buster-backports main" >/etc/apt/sources.list.d/backports.list
         apt-get update
-        apt-get install -y wireguard iptables resolvconf qrencode jq
-    elif [[ ${OS} == 'debian' ]]; then
-        if ! grep -rqs "^deb .* buster-backports" /etc/apt/; then
-            echo "deb http://deb.debian.org/debian buster-backports main" >/etc/apt/sources.list.d/backports.list
-            apt-get update
-        fi
-        apt update
-        apt-get install -y iptables resolvconf qrencode jq
-        apt-get install -y -t buster-backports wireguard
     fi
-}
-
+    apt update
+    apt-get install -y iptables resolvconf qrencode
+    apt-get install -y -t buster-backports wireguard
+fi
 
 	# Make sure the directory exists (this does not seem the be the case on fedora)
 	mkdir /etc/wireguard >/dev/null 2>&1
@@ -626,17 +624,33 @@ function displayConnectedClients() {
     local wg_json_output
     wg_json_output=$(/etc/wireguard/wg-json)
 
-    echo "+---------------------------------+-------------------+---------------------+"
-    echo "| Client IP                       | Last Handshake    | Status              |"
-    echo "+---------------------------------+-------------------+---------------------+"
+    echo "+---------------------------------+-------------------+---------------------+---------------------+---------------------+"
+    echo "| Client IP                       | Last Handshake    | Status              | Endpoint            | Data Transferred    |"
+    echo "+---------------------------------+-------------------+---------------------+---------------------+---------------------+"
 
     # Parsing the JSON using jq
-    echo "$wg_json_output" | jq -r 'to_entries[] | .value.peers | to_entries[] | "\(.value.allowedIps[0]) | \((if .value.latestHandshake then (.value.latestHandshake | tonumber | strftime("%Y-%m-%d %H:%M:%S")) else "Never" end)) | \((if .value.latestHandshake then "Connected" else "Never Connected" end))" ' | while read line; do
+    echo "$wg_json_output" | jq -r 'to_entries[] | .value.peers | to_entries[] | 
+        if .value.latestHandshake == 0 then
+            "\(.value.allowedIps[0]) | Never | Never Connected | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring)"
+        elif .value.latestHandshake | type == "number" then
+            "\(.value.allowedIps[0]) | \(.value.latestHandshake | todate) | Connected | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring)"
+        else
+            "\(.value.allowedIps[0]) | Error | Connection Error | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring)"
+        end' | while read line; do
         echo "| $line |"
     done
 
-    echo "+---------------------------------+-------------------+---------------------+"
+    echo "+---------------------------------+-------------------+---------------------+---------------------+---------------------+"
 }
+
+
+
+
+
+
+
+
+
 
 
 
