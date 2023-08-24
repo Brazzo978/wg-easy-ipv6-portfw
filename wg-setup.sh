@@ -564,35 +564,33 @@ function disableIPv6Use() {
 }
 
 function displayConnectedClients() {
-    # Get a list of peer information
-    local peer_info
-    peer_info=$(wg show "$SERVER_WG_NIC" dump)
-
-    # Header
     echo "+---------------------------------+-------------------+---------------------+"
     echo "| Client IP                       | Last Handshake    | Status              |"
     echo "+---------------------------------+-------------------+---------------------+"
 
-    while IFS= read -r line; do
-        local client_ip last_handshake
+    wg show ${SERVER_WG_NIC} dump | tail -n +2 | while read -r line; do
+        client_ip=$(echo "$line" | awk '{print $5}' | cut -d ',' -f 1)
+        last_handshake=$(echo "$line" | awk '{print $6}')
 
-        client_ip=$(echo "$line" | awk '{print $3}')
-        last_handshake_epoch=$(echo "$line" | awk '{print $5}')
+        if [[ "$client_ip" == "(none)" ]]; then
+            client_ip="Not Connected"
+        fi
 
-        # Convert to readable time
-        if [[ "$last_handshake_epoch" == 0 ]]; then
-            last_handshake="Never"
+        if [[ "$last_handshake" == "0" || ! "$last_handshake" =~ ^[0-9]+$ ]]; then
+            handshake="Never"
+        else
+            handshake=$(date -d @"$last_handshake" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "Invalid Date")
+        fi
+
+        if [[ "$handshake" == "Never" ]]; then
             status="Never Connected"
         else
-            last_handshake=$(date -d "@$last_handshake_epoch" "+%Y-%m-%d %H:%M:%S")
             status="Connected Before"
         fi
 
-        echo "| ${client_ip}                     | ${last_handshake} | ${status}      |"
+        echo "| ${client_ip:0:32} | ${handshake:0:19} | ${status:0:19} |"
+    done
 
-    done <<< "$peer_info"
-
-    # Footer
     echo "+---------------------------------+-------------------+---------------------+"
 }
 
