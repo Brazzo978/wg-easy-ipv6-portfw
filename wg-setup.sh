@@ -635,7 +635,7 @@ function displayConnectedClients() {
         elif .value.latestHandshake | type == "number" then
             "\(.value.allowedIps[0]) | \(.value.latestHandshake | todate) | Connected | \(.value.endpoint // "Not set") | \( ((.value.transferRx // 0) + (.value.transferTx // 0)) / 1048576 | tostring + " MB")"
         else
-            "\(.value.allowedIps[0]) | Never Connected | Never | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring)"
+            "\(.value.allowedIps[0]) | Never | Never Connected | Not set | 0"
         end' | while read line; do
         echo "| $line |"
     done
