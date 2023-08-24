@@ -150,22 +150,24 @@ function installQuestions() {
 }
 
 function installWireGuard() {
-	# Run setup questions first
-	installQuestions
+    # Run setup questions first
+    installQuestions
 
-	# Install WireGuard tools and module
-if [[ ${OS} == 'ubuntu' ]] || [[ ${OS} == 'debian' && ${VERSION_ID} -gt 10 ]]; then
-    apt-get update
-    apt-get install -y wireguard iptables resolvconf qrencode
-elif [[ ${OS} == 'debian' ]]; then
-    if ! grep -rqs "^deb .* buster-backports" /etc/apt/; then
-        echo "deb http://deb.debian.org/debian buster-backports main" >/etc/apt/sources.list.d/backports.list
+    # Install WireGuard tools and module
+    if [[ ${OS} == 'ubuntu' ]] || [[ ${OS} == 'debian' && ${VERSION_ID} -gt 10 ]]; then
         apt-get update
+        apt-get install -y wireguard iptables resolvconf qrencode jq
+    elif [[ ${OS} == 'debian' ]]; then
+        if ! grep -rqs "^deb .* buster-backports" /etc/apt/; then
+            echo "deb http://deb.debian.org/debian buster-backports main" >/etc/apt/sources.list.d/backports.list
+            apt-get update
+        fi
+        apt update
+        apt-get install -y iptables resolvconf qrencode jq
+        apt-get install -y -t buster-backports wireguard
     fi
-    apt update
-    apt-get install -y iptables resolvconf qrencode
-    apt-get install -y -t buster-backports wireguard
-fi
+}
+
 
 	# Make sure the directory exists (this does not seem the be the case on fedora)
 	mkdir /etc/wireguard >/dev/null 2>&1
