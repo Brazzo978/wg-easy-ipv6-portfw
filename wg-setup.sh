@@ -620,28 +620,27 @@ function disableIPv6Use() {
 }
 
 function displayConnectedClients() {
-    # Assuming wg-json script is executable and in /etc/wireguard
     local wg_json_output
     wg_json_output=$(/etc/wireguard/wg-json)
 
-    echo "+-----------------------+-------------------+---------------------+---------------------+---------------------+"
-    echo "| Client IP             | Last Handshake    | Status              | Endpoint            | Data Transferred    |"
-    echo "+-----------------------+-------------------+---------------------+---------------------+---------------------+"
+    echo "+-----------------+-------------------+---------------------+---------------------+---------------------+"
+    echo "| Client IP       | Last Handshake    | Status              | Endpoint            | Data Transferred    |"
+    echo "+-----------------+-------------------+---------------------+---------------------+---------------------+"
 
-# Parsing the JSON using jq
-echo "$wg_json_output" | jq -r 'to_entries[] | .value.peers | to_entries[] | 
-    if .value.latestHandshake == 0 then
-        "\(.value.allowedIps[0]) | Never | Never Connected | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring) MB"
-    elif .value.latestHandshake | type == "number" then
-        "\(.value.allowedIps[0]) | \(.value.latestHandshake | todate) | Connected | \(.value.endpoint // "Not set") | \( (((.value.transferRx // 0) + (.value.transferTx // 0)) / 1048576) * 100 | round / 100) MB"
-    else
-        "\(.value.allowedIps[0]) | Never Connected | Never | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring) MB"
-    end' | while read line; do
-    echo "| $line |"
-done
+    local now=$(date +%s)
 
+    echo "$wg_json_output" | jq --arg now "$now" -r 'to_entries[] | .value.peers | to_entries[] | 
+        if (.value.latestHandshake? // 0) == 0 then
+            "\(.value.allowedIps[0]) | Never Connected | Never Connected | \(.value.endpoint // "Not set") | \( (((.value.transferRx? // 0) + (.value.transferTx? // 0)) / 1048576) * 100 | round / 100) MB"
+        elif (.value.latestHandshake? | tonumber) > ($now | tonumber) - 240 then
+            "\(.value.allowedIps[0]) | \(.value.latestHandshake? | todate) | Connected | \(.value.endpoint // "Not set") | \( (((.value.transferRx? // 0) + (.value.transferTx? // 0)) / 1048576) * 100 | round / 100) MB"
+        else
+            "\(.value.allowedIps[0]) | \(.value.latestHandshake? | todate) | Disconnected | \(.value.endpoint // "Not set") | \( (((.value.transferRx? // 0) + (.value.transferTx? // 0)) / 1048576) * 100 | round / 100) MB"
+        end' | while read line; do
+        echo "| $line |"
+    done
 
-    echo "+-----------------------+-------------------+---------------------+---------------------+---------------------+"
+    echo "+-----------------+-------------------+---------------------+---------------------+---------------------+"
 }
 
 
