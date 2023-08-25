@@ -628,17 +628,18 @@ function displayConnectedClients() {
     echo "| Client IP             | Last Handshake    | Status              | Endpoint            | Data Transferred    |"
     echo "+-----------------------+-------------------+---------------------+---------------------+---------------------+"
 
-    # Parsing the JSON using jq
-    echo "$wg_json_output" | jq -r 'to_entries[] | .value.peers | to_entries[] | 
-        if .value.latestHandshake == 0 then
-            "\(.value.allowedIps[0]) | Never | Never Connected | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring)"
-        elif .value.latestHandshake | type == "number" then
-            "\(.value.allowedIps[0]) | \(.value.latestHandshake | todate) | Connected | \(.value.endpoint // "Not set") | \( ((.value.transferRx // 0) + (.value.transferTx // 0)) / 1048576 | tostring + " MB")"
-        else
-            "\(.value.allowedIps[0]) | Never | Never Connected | Not set | 0"
-        end' | while read line; do
-        echo "| $line |"
-    done
+# Parsing the JSON using jq
+echo "$wg_json_output" | jq -r 'to_entries[] | .value.peers | to_entries[] | 
+    if .value.latestHandshake == 0 then
+        "\(.value.allowedIps[0]) | Never | Never Connected | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring) MB"
+    elif .value.latestHandshake | type == "number" then
+        "\(.value.allowedIps[0]) | \(.value.latestHandshake | todate) | Connected | \(.value.endpoint // "Not set") | \( (((.value.transferRx // 0) + (.value.transferTx // 0)) / 1048576) * 100 | round / 100) MB"
+    else
+        "\(.value.allowedIps[0]) | Never Connected | Never | \(.value.endpoint // "Not set") | \((.value.transferRx // 0) + (.value.transferTx // 0) | tostring) MB"
+    end' | while read line; do
+    echo "| $line |"
+done
+
 
     echo "+-----------------------+-------------------+---------------------+---------------------+---------------------+"
 }
