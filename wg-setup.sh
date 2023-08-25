@@ -411,7 +411,7 @@ function newClient() {
             BASE_IP=$(echo "$SERVER_WG_IPV6" | awk -F '::' '{ print $1 }')
             until [[ ${IPV6_EXISTS} == '0' ]]; do
                 read -rp "Client WireGuard IPv6: ${BASE_IP}::" -e -i "${DOT_IP}" DOT_IP
-                CLIENT_WG_IPV6="${BASE_IP}::${DOT_IP}"
+                CLIENT_WG_IPV6="${BASE_IP}::${DOT_IP}/128"
                 IPV6_EXISTS=$(grep -c "${CLIENT_WG_IPV6}/128" "/etc/wireguard/${SERVER_WG_NIC}.conf")
 
                 if [[ ${IPV6_EXISTS} != 0 ]]; then
@@ -440,7 +440,7 @@ done
 	# Create client file and add the server as a peer
 	echo "[Interface]
 PrivateKey = ${CLIENT_PRIV_KEY}
-Address = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}/128
+Address = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}
 DNS = ${CLIENT_DNS_1},${CLIENT_DNS_2}
 
 [Peer]
@@ -454,7 +454,7 @@ AllowedIPs = ${ALLOWED_IPS}" >"${HOME_DIR}/${SERVER_WG_NIC}-client-${CLIENT_NAME
 [Peer]
 PublicKey = ${CLIENT_PUB_KEY}
 PresharedKey = ${CLIENT_PRE_SHARED_KEY}
-AllowedIPs = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}/128" >>"/etc/wireguard/${SERVER_WG_NIC}.conf"
+AllowedIPs = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}" >>"/etc/wireguard/${SERVER_WG_NIC}.conf"
 
 	wg syncconf "${SERVER_WG_NIC}" <(wg-quick strip "${SERVER_WG_NIC}")
 
@@ -692,6 +692,32 @@ function checkForUpdates() {
 
 
 
+function toggleSystemVar() {
+    # Check if the script exists in /usr/bin
+    if [ -f "/usr/bin/wg-setup" ]; then
+        echo "The script is currently added to the system variable. Do you want to remove it? (y/n)"
+        read choice
+        if [[ $choice == "y" || $choice == "Y" ]]; then
+            rm "/usr/bin/wg-setup"
+            echo "Script has been removed from /usr/bin!"
+        else
+            echo "Action cancelled."
+        fi
+    else
+        echo "The script is not in the system variable. Do you want to add it? (y/n)"
+        read choice
+        if [[ $choice == "y" || $choice == "Y" ]]; then
+            cp "/root/wg-setup.sh" "/usr/bin/wg-setup"
+            chmod +x "/usr/bin/wg-setup"
+            echo "Script has been added to /usr/bin!"
+        else
+            echo "Action cancelled."
+        fi
+    fi
+}
+
+
+
 
 
 function manageMenu() {
@@ -707,10 +733,12 @@ function manageMenu() {
     echo "   6) Disable Public IPv6 Use"
     echo "   7) Display connected clients"
     echo "   8) Check for updates"
-    echo "   9) Exit"
+    echo "   9) Add/Remove script to system variable"
+    echo "   10) Some new function"
+    echo "   11) Exit"
     
-    until [[ ${MENU_OPTION} =~ ^[1-9]$ ]]; do
-        read -rp "Select an option [1-9]: " MENU_OPTION
+    until [[ ${MENU_OPTION} =~ ^[1-9]$|^10$|^11$ ]]; do
+        read -rp "Select an option [1-11]: " MENU_OPTION
     done
     
     case "${MENU_OPTION}" in
@@ -739,10 +767,17 @@ function manageMenu() {
         checkForUpdates
         ;;
     9)
+        toggleSystemVar
+        ;;
+    10)
+        yourNewFunction
+        ;;
+    11)
         exit 0
         ;;
     esac
 }
+
 
 
 
