@@ -659,12 +659,19 @@ function updateScript() {
         
         # Move the new script to the /root directory
         mv "$tmp_file" "/root/wg-setup.sh"
-        
         echo "Script has been updated and moved to /root!"
+
+        # Check if wg-setup (without .sh) exists in /usr/bin
+        if [ -f "/usr/bin/wg-setup" ]; then
+            cp "/root/wg-setup.sh" "/usr/bin/wg-setup"
+            chmod +x "/usr/bin/wg-setup"
+            echo "Script has also been updated in /usr/bin!"
+        fi
     else
         echo "Failed to download the updated script."
     fi
 }
+
 
 
 function checkForUpdates() {
@@ -699,11 +706,13 @@ function manageMenu() {
     echo "   5) Enable Public IPv6 Use"
     echo "   6) Disable Public IPv6 Use"
     echo "   7) Display connected clients"
-    echo "   8) Exit"
-    echo "   9) Check for updates"
+    echo "   8) Check for updates"
+    echo "   9) Exit"
+    
     until [[ ${MENU_OPTION} =~ ^[1-9]$ ]]; do
         read -rp "Select an option [1-9]: " MENU_OPTION
     done
+    
     case "${MENU_OPTION}" in
     1)
         newClient
@@ -727,10 +736,10 @@ function manageMenu() {
         displayConnectedClients
         ;;
     8)
-        exit 0
+        checkForUpdates
         ;;
     9)
-        checkForUpdates
+        exit 0
         ;;
     esac
 }
@@ -747,10 +756,3 @@ if [[ -e /etc/wireguard/params ]]; then
 else
 	installWireGuard
 fi
-
-
-
-
-
-
-
