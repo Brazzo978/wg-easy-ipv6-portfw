@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 RED='\033[0;31m'
@@ -644,22 +645,45 @@ function displayConnectedClients() {
     echo "+-----------------+-------------------+---------------------+---------------------+---------------------+"
 }
 
-function checkForUpdates() {
-    # Fetch the current version from the GitHub raw content
-    GITHUB_VERSION=$(curl -s "https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/main/wg-setup.sh" | grep 'VERSION="' | awk -F '"' '{print $2}')
+function updateScript() {
+    # Temporary location for the new script
+    local tmp_file="/tmp/wg-setup.sh"
 
-    if [[ "$GITHUB_VERSION" > "$VERSION" ]]; then
-        echo -e "${ORANGE}A new version ($GITHUB_VERSION) is available!${NC}"
-        read -p "Do you want to update now? (y/n) " choice
-        case "$choice" in
-            y|Y) updateScript ;;
-            n|N) echo "Update skipped." ;;
-            *) echo "Invalid choice." ;;
-        esac
+    # Download the new script to a temporary location
+    curl -s "https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/main/wg-setup.sh" -o "$tmp_file"
+
+    # Check if the download was successful
+    if [ $? -eq 0 ]; then
+        # Make the downloaded script executable
+        chmod +x "$tmp_file"
+        
+        # Move the new script to the /root directory
+        mv "$tmp_file" "/root/wg-setup.sh"
+        
+        echo "Script has been updated and moved to /root!"
     else
-        echo -e "${GREEN}You're running the latest version!${NC}"
+        echo "Failed to download the updated script."
     fi
 }
+
+
+function checkForUpdates() {
+    local latest_rev
+    latest_rev=$(curl -s "https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/main/wg-setup.sh?$(date +%s)" | grep '^REV="[0-9]*"' | cut -d'=' -f2 | tr -d '"' )
+    
+    if [ "$latest_rev" -gt "$REV" ]; then
+        echo "A new version (v$latest_rev) is available! (you have v$REV)"
+        echo "https://github.com/Brazzo978/wg-easy-ipv6-portfw/blob/main/wg-setup.sh"
+        read -rp "Do you want to update now? (y/n) " choice
+        if [[ $choice == "y" || $choice == "Y" ]]; then
+            updateScript
+        fi
+    else
+        echo "You are using the latest version (v$REV)!"
+    fi
+}
+
+
 
 
 
