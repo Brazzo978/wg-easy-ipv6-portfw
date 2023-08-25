@@ -4,6 +4,7 @@ RED='\033[0;31m'
 ORANGE='\033[0;33m'
 GREEN='\033[0;32m'
 NC='\033[0m'
+VERSION="v4"
 
 function isRoot() {
 	if [ "${EUID}" -ne 0 ]; then
@@ -643,7 +644,22 @@ function displayConnectedClients() {
     echo "+-----------------+-------------------+---------------------+---------------------+---------------------+"
 }
 
+function checkForUpdates() {
+    # Fetch the current version from the GitHub raw content
+    GITHUB_VERSION=$(curl -s "https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/main/wg-setup.sh" | grep 'VERSION="' | awk -F '"' '{print $2}')
 
+    if [[ "$GITHUB_VERSION" > "$VERSION" ]]; then
+        echo -e "${ORANGE}A new version ($GITHUB_VERSION) is available!${NC}"
+        read -p "Do you want to update now? (y/n) " choice
+        case "$choice" in
+            y|Y) updateScript ;;
+            n|N) echo "Update skipped." ;;
+            *) echo "Invalid choice." ;;
+        esac
+    else
+        echo -e "${GREEN}You're running the latest version!${NC}"
+    fi
+}
 
 
 
@@ -660,8 +676,9 @@ function manageMenu() {
     echo "   6) Disable Public IPv6 Use"
     echo "   7) Display connected clients"
     echo "   8) Exit"
-    until [[ ${MENU_OPTION} =~ ^[1-8]$ ]]; do
-        read -rp "Select an option [1-8]: " MENU_OPTION
+    echo "   9) Check for updates"
+    until [[ ${MENU_OPTION} =~ ^[1-9]$ ]]; do
+        read -rp "Select an option [1-9]: " MENU_OPTION
     done
     case "${MENU_OPTION}" in
     1)
@@ -688,8 +705,12 @@ function manageMenu() {
     8)
         exit 0
         ;;
+    9)
+        checkForUpdates
+        ;;
     esac
 }
+
 
 
 # Check for root, virt, OS...
