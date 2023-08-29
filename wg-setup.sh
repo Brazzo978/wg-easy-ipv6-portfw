@@ -717,6 +717,241 @@ function toggleSystemVar() {
 }
 
 
+function isPortInUse() {
+    local input_port_or_range="$1"
+    IFS="-" read -ra INPUT_PORTS <<< "$input_port_or_range"
+
+    # Check all the ports in the port_fwd_up.sh
+    while IFS= read -r line; do
+        # Extract only the dport value
+        local existing_port_or_range=$(echo "$line" | grep -oP '(?<=--dport )[^ ]+')
+
+        if [[ $existing_port_or_range == *":"* ]]; then
+            IFS=":" read -ra EXISTING_PORTS <<< "$existing_port_or_range"
+        else
+            EXISTING_PORTS=("$existing_port_or_range")
+        fi
+
+        # If the input is a range
+        if [ ${#INPUT_PORTS[@]} -eq 2 ]; then
+            for port in $(seq "${INPUT_PORTS[0]}" "${INPUT_PORTS[1]}"); do
+                if [ ${#EXISTING_PORTS[@]} -eq 2 ]; then
+                    if [ "$port" -ge "${EXISTING_PORTS[0]}" ] && [ "$port" -le "${EXISTING_PORTS[1]}" ]; then
+                        return 0
+                    fi
+                else
+                    if [ "$port" -eq "${EXISTING_PORTS[0]}" ]; then
+                        return 0
+                    fi
+                fi
+            done
+        else
+            if [ ${#EXISTING_PORTS[@]} -eq 2 ]; then
+                if [ "${INPUT_PORTS[0]}" -ge "${EXISTING_PORTS[0]}" ] && [ "${INPUT_PORTS[0]}" -le "${EXISTING_PORTS[1]}" ]; then
+                    return 0
+                fi
+            else
+                if [ "${INPUT_PORTS[0]}" -eq "${EXISTING_PORTS[0]}" ]; then
+                    return 0
+                fi
+            fi
+        fi
+
+    done < /etc/wireguard/port_fwd_up.sh
+
+    return 1
+}
+
+function addPortForward() {
+    # Ensure the necessary files exist and have the right permissions
+    for FILE in /etc/wireguard/port_fwd_up.sh /etc/wireguard/port_fwd_down.sh; do
+        # If the file doesn't exist, create it
+        if [ ! -f "$FILE" ]; then
+            touch "$FILE"
+            chmod +x "$FILE"
+        fi
+    done
+
+    # Validation function for IP address format
+    function isValidIP() {
+        local ip=$1
+        if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            return 0
+        else
+            return 1
+        fi
+    }
+
+    # Validation function for Port Range format
+    function isValidPortRange() {
+        local range=$1
+        if [[ $range =~ ^[0-9]+$ ]]; then
+            return 0
+        elif [[ $range =~ ^[0-9]+-[0-9]+$ ]]; then
+            local start_port=${range%-*}
+            local end_port=${range#*-}
+            if (( start_port < end_port )); then
+                return 0
+            fi
+        fi
+        return 1
+    }
+
+    read -rp "Enter the peer's IP: " PEER_IP
+    while ! isValidIP "$PEER_IP"; do
+        echo "Error: Invalid IP format."
+        read -rp "Enter the peer's IP: " PEER_IP
+    done
+
+    read -rp "Enter the port or port range (e.g., 80 or 80-65521): " PORT_RANGE
+    while ! isValidPortRange "$PORT_RANGE" || isPortInUse "$PORT_RANGE"; do
+        # Check for overlapping rules with isPortInUse function
+        if isPortInUse "$PORT_RANGE"; then
+            echo "Error: Port or port range overlaps with existing rules."
+        else
+            echo "Error: Invalid port or port range format."
+        fi
+        read -rp "Enter the port or port range (e.g., 80 or 80-65521): " PORT_RANGE
+    done
+
+    # Add iptables rule for both TCP and UDP
+    if [[ $PORT_RANGE == *-* ]]; then
+        IPTABLES_RULE_TCP="iptables -t nat -A PREROUTING -i ${SERVER_PUB_NIC} -p tcp --dport ${PORT_RANGE//\-/:} -j DNAT --to-destination ${PEER_IP}:${PORT_RANGE}"
+        IPTABLES_RULE_UDP="iptables -t nat -A PREROUTING -i ${SERVER_PUB_NIC} -p udp --dport ${PORT_RANGE//\-/:} -j DNAT --to-destination ${PEER_IP}:${PORT_RANGE}"
+    else
+        IPTABLES_RULE_TCP="iptables -t nat -A PREROUTING -i ${SERVER_PUB_NIC} -p tcp --dport ${PORT_RANGE} -j DNAT --to-destination ${PEER_IP}:${PORT_RANGE}"
+        IPTABLES_RULE_UDP="iptables -t nat -A PREROUTING -i ${SERVER_PUB_NIC} -p udp --dport ${PORT_RANGE} -j DNAT --to-destination ${PEER_IP}:${PORT_RANGE}"
+    fi
+    
+    # Add the port forwarding rules to port_fwd_up.sh
+    echo "$IPTABLES_RULE_TCP" >> /etc/wireguard/port_fwd_up.sh
+    echo "$IPTABLES_RULE_UDP" >> /etc/wireguard/port_fwd_up.sh
+    
+    # If range, convert dashes to colons for the reverse rules
+    if [[ $PORT_RANGE == *-* ]]; then
+        IPTABLES_REVERSE_TCP="iptables -t nat -D PREROUTING -i ${SERVER_PUB_NIC} -p tcp --dport ${PORT_RANGE//\-/:} -j DNAT --to-destination ${PEER_IP}:${PORT_RANGE}"
+        IPTABLES_REVERSE_UDP="iptables -t nat -D PREROUTING -i ${SERVER_PUB_NIC} -p udp --dport ${PORT_RANGE//\-/:} -j DNAT --to-destination ${PEER_IP}:${PORT_RANGE}"
+    else
+        IPTABLES_REVERSE_TCP="iptables -t nat -D PREROUTING -i ${SERVER_PUB_NIC} -p tcp --dport ${PORT_RANGE} -j DNAT --to-destination ${PEER_IP}:${PORT_RANGE}"
+        IPTABLES_REVERSE_UDP="iptables -t nat -D PREROUTING -i ${SERVER_PUB_NIC} -p udp --dport ${PORT_RANGE} -j DNAT --to-destination ${PEER_IP}:${PORT_RANGE}"
+    fi
+
+    # Add the reverse (deletion) rules to port_fwd_down.sh
+    echo "$IPTABLES_REVERSE_TCP" >> /etc/wireguard/port_fwd_down.sh
+    echo "$IPTABLES_REVERSE_UDP" >> /etc/wireguard/port_fwd_down.sh
+    
+    echo "Port forwarding rules have been added."
+}
+
+
+
+function listpfrules() {
+    local lineno=1
+    local ip
+    local port
+
+    if [ ! -f "/etc/wireguard/port_fwd_up.sh" ]; then
+        echo "No port forwarding rules found."
+        return
+    fi
+
+    echo "Listing port forwarding rules:"
+    
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Check if the line contains "--to-destination" and extract the IP and port
+        if [[ $line == *"--to-destination"* ]]; then
+            ip=$(echo "$line" | grep -oP '(?<=--to-destination )[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+            port=$(echo "$line" | grep -oP '(?<=--dport )[^ ]+')
+        fi
+
+        if [ -n "$ip" ] && [ -n "$port" ]; then
+            # Display the IP and port to the user
+            echo "${lineno}. IP: $ip, Port/Range: $port"
+            ((lineno++))
+        fi
+
+        # Read the next line (to skip over the UDP rule)
+        read -r line
+    done < /etc/wireguard/port_fwd_up.sh
+}
+
+function removepfrules() {
+    echo "Current Port Forwarding Rules:"
+    
+    local total_rules=0
+    local lineno=1
+    local count=0
+    while IFS= read -r line; do
+        if [[ $line == *"--to-destination"* ]]; then
+            ((count++))
+            # Only display once for every two lines (TCP and UDP)
+            if (( count % 2 == 1 )); then
+                local ip=$(echo "$line" | grep -oP '(?<=--to-destination )[^:]+')
+                local port_or_range=$(echo "$line" | grep -oP '(?<=--dport )[^ ]+')
+                echo "${lineno}. IP: ${ip}, Port/Range: ${port_or_range}"
+                ((lineno++))
+                ((total_rules++))
+            fi
+        fi
+    done < /etc/wireguard/port_fwd_up.sh
+    
+    # Get the user's choice and validate it
+local choice
+while :; do
+    read -rp "Enter the number of the rule you want to remove (1-$total_rules): " choice
+    if [[ $choice =~ ^[1-$total_rules]$ ]]; then
+        break
+    else
+        echo "Wrong selection. Please choose a number between 1 and $total_rules."
+    fi
+done
+
+    # Calculate the line numbers
+    local line_to_delete=$((choice * 2 - 1)) # for TCP
+    local next_line=$((choice * 2))  # for UDP
+
+    # Delete the lines from port_fwd_up.sh
+    sed -i "${line_to_delete}d" /etc/wireguard/port_fwd_up.sh
+    sed -i "$((next_line - 1))d" /etc/wireguard/port_fwd_up.sh
+
+    # Delete the lines from port_fwd_down.sh
+    sed -i "${line_to_delete}d" /etc/wireguard/port_fwd_down.sh
+    sed -i "$((next_line - 1))d" /etc/wireguard/port_fwd_down.sh
+    
+    echo "Rule removed successfully!"
+}
+
+togglepfall() {
+    WG_CONF="/etc/wireguard/wg0.conf"
+    UP_RULE="/etc/wireguard/port_fwd_up.sh"
+    DOWN_RULE="/etc/wireguard/port_fwd_down.sh"
+
+    # The two lines we want to add or remove
+    LINE1="PostUp = /etc/wireguard/port_fwd_up.sh"
+    LINE2="PostDown = /etc/wireguard/port_fwd_down.sh"
+
+    # First, let's check if the required port forwarding files exist
+    if [[ ! -f $UP_RULE ]] || [[ ! -f $DOWN_RULE ]]; then
+        echo "No port forwarding rules defined. Run option 10 at least once before enabling."
+        return
+    fi
+
+    # Check if the specific lines are already present in the config file
+    if grep -q "^$LINE1$" "$WG_CONF"; then
+        # Remove both PostUp and PostDown rules
+        sed -i "\|^$LINE1$|d" "$WG_CONF"
+        sed -i "\|^$LINE2$|d" "$WG_CONF"
+        echo "Port forwarding rules have been disabled."
+    else
+        # Insert the rules before the "### Client" line in a temporary file and then replace the original file
+        awk -v line1="$LINE1" -v line2="$LINE2" '/^### Client / {print line1; print line2; print; next} 1' "$WG_CONF" > "${WG_CONF}.tmp" && mv "${WG_CONF}.tmp" "$WG_CONF"
+        echo "Port forwarding rules have been enabled."
+    fi
+}
+
+
+
+
 
 
 
@@ -734,11 +969,14 @@ function manageMenu() {
     echo "   7) Display connected clients"
     echo "   8) Check for updates"
     echo "   9) Add/Remove script to system variable"
-    echo "   10) Some new function"
-    echo "   11) Exit"
+    echo "   10) Add Port Forwarding Rule"
+    echo "   11) List Port Forwarding Rules"
+    echo "   12) Remove Port Forwarding Rule"
+    echo "   13) Toggle Port Forwarding for All"
+    echo "   14) Exit"
     
-    until [[ ${MENU_OPTION} =~ ^[1-9]$|^10$|^11$ ]]; do
-        read -rp "Select an option [1-11]: " MENU_OPTION
+    until [[ ${MENU_OPTION} =~ ^[1-9]$|^10$|^11$|^12$|^13$|^14$ ]]; do
+        read -rp "Select an option [1-14]: " MENU_OPTION
     done
     
     case "${MENU_OPTION}" in
@@ -770,9 +1008,18 @@ function manageMenu() {
         toggleSystemVar
         ;;
     10)
-        yourNewFunction
+        addPortForward
         ;;
     11)
+        listpfrules     
+        ;;
+    12)
+        removepfrules   
+        ;;
+    13)
+        togglepfall      
+        ;;
+    14)
         exit 0
         ;;
     esac
