@@ -158,14 +158,14 @@ function installWireGuard() {
 	# Install WireGuard tools and module
 if [[ ${OS} == 'ubuntu' ]] || [[ ${OS} == 'debian' && ${VERSION_ID} -gt 10 ]]; then
     apt-get update
-    apt-get install -y wireguard iptables resolvconf qrencode jq
+    apt-get install -y wireguard iptables resolvconf qrencode
 elif [[ ${OS} == 'debian' ]]; then
     if ! grep -rqs "^deb .* buster-backports" /etc/apt/; then
         echo "deb http://deb.debian.org/debian buster-backports main" >/etc/apt/sources.list.d/backports.list
         apt-get update
     fi
     apt update
-    apt-get install -y iptables resolvconf qrencode jq
+    apt-get install -y iptables resolvconf qrencode
     apt-get install -y -t buster-backports wireguard
 fi
 
@@ -625,25 +625,40 @@ function displayConnectedClients() {
     local wg_json_output
     wg_json_output=$(/etc/wireguard/wg-json)
 
-    echo "+-----------------+-------------------+---------------------+---------------------+---------------------+"
-    echo "| Client IP       | Last Handshake    | Status              | Endpoint            | Data Transferred    |"
-    echo "+-----------------+-------------------+---------------------+---------------------+---------------------+"
+    echo "+--------------------+-------------------+----------------------------+-----------------------+---------------------+"
+    echo "| Client IP          | Last Handshake    | Status                     | Endpoint              | Data Transferred    |"
+    echo "+--------------------+-------------------+----------------------------+-----------------------+---------------------+"
 
     local now=$(date +%s)
 
-    echo "$wg_json_output" | jq --arg now "$now" -r 'to_entries[] | .value.peers | to_entries[] | 
-        if (.value.latestHandshake? // 0) == 0 then
-            "\(.value.allowedIps[0]) | Never Connected | Never Connected | \(.value.endpoint // "Not set") | \( (((.value.transferRx? // 0) + (.value.transferTx? // 0)) / 1048576) * 100 | round / 100) MB"
-        elif (.value.latestHandshake? | tonumber) > ($now | tonumber) - 240 then
-            "\(.value.allowedIps[0]) | \(.value.latestHandshake? | todate) | Connected | \(.value.endpoint // "Not set") | \( (((.value.transferRx? // 0) + (.value.transferTx? // 0)) / 1048576) * 100 | round / 100) MB"
-        else
-            "\(.value.allowedIps[0]) | \(.value.latestHandshake? | todate) | Disconnected | \(.value.endpoint // "Not set") | \( (((.value.transferRx? // 0) + (.value.transferTx? // 0)) / 1048576) * 100 | round / 100) MB"
-        end' | while read line; do
+    echo "$wg_json_output" | jq --arg now "$now" -r '
+    to_entries[] | .value.peers | to_entries[] | 
+    {
+        ClientIP: .value.allowedIps[0],
+        LastHandshake: (if .value.latestHandshake then 
+                          (.value.latestHandshake | tonumber | 
+                            if . == 0 then "Never            " 
+                            else (. | todate | gsub("T"; " ") | gsub("-"; "/") | gsub("Z"; "") | .[0:16]) 
+                            end) 
+                        else 
+                          "Never            " 
+                        end),
+        Status: (if .value.latestHandshake | not then "Never Connected "
+                 elif (.value.latestHandshake | tonumber) > ($now | tonumber) - 240 then "Connected       "
+                 else "Disconnected    "
+                 end),
+        Endpoint: (if .value.endpoint and .value.endpoint != "" then .value.endpoint else "Not set           " end),
+        DataTransferred: (((.value.transferRx? // 0) + (.value.transferTx? // 0)) / 1048576 | floor | tostring)
+    } | 
+    [.ClientIP, .LastHandshake, .Status, .Endpoint, (.DataTransferred + " MB")] | 
+    @tsv' | while read line; do
         echo "| $line |"
     done
 
-    echo "+-----------------+-------------------+---------------------+---------------------+---------------------+"
+    echo "+--------------------+-------------------+----------------------------+-----------------------+---------------------+"
 }
+
+
 
 function updateScript() {
     # Temporary location for the new script
