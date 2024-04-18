@@ -152,22 +152,22 @@ function installQuestions() {
 }
 
 function installWireGuard() {
-	# Run setup questions first
-	installQuestions
+    # Run setup questions first
+    installQuestions
 
-	# Install WireGuard tools and module
-if [[ ${OS} == 'ubuntu' ]] || [[ ${OS} == 'debian' && ${VERSION_ID} -gt 10 ]]; then
-    apt-get update
-    apt-get install -y wireguard iptables resolvconf qrencode
-elif [[ ${OS} == 'debian' ]]; then
-    if ! grep -rqs "^deb .* buster-backports" /etc/apt/; then
-        echo "deb http://deb.debian.org/debian buster-backports main" >/etc/apt/sources.list.d/backports.list
+    # Install WireGuard tools and module
+    if [[ ${OS} == 'ubuntu' ]] || [[ ${OS} == 'debian' && ${VERSION_ID} -gt 10 ]]; then
         apt-get update
+        apt-get install -y wireguard iptables resolvconf qrencode iproute2 jq
+    elif [[ ${OS} == 'debian' ]]; then
+        if ! grep -rqs "^deb .* buster-backports" /etc/apt/; then
+            echo "deb http://deb.debian.org/debian buster-backports main" >/etc/apt/sources.list.d/backports.list
+            apt-get update
+        fi
+        apt update
+        apt-get install -y iptables resolvconf qrencode iproute2 jq
+        apt-get install -y -t buster-backports wireguard
     fi
-    apt update
-    apt-get install -y iptables resolvconf qrencode
-    apt-get install -y -t buster-backports wireguard
-fi
 
 	# Make sure the directory exists (this does not seem the be the case on fedora)
 	mkdir /etc/wireguard >/dev/null 2>&1
@@ -966,6 +966,126 @@ togglepfall() {
 
 
 
+function addLimiter() {
+    local IP_ADDRESS
+    local BANDWIDTH_MBPS  # Now directly in Mbps
+    local INTERFACE=${SERVER_WG_NIC}  # Use the WireGuard interface by default
+    local RATE_MBPS
+
+    echo "Enter the IP address of the client you want to limit:"
+    read -rp "IP Address: " IP_ADDRESS
+
+    echo "Enter the bandwidth limit in Mbps for both download and inbound (e.g., 10 for 10Mbps):"
+    read -rp "Bandwidth (Mbps): " BANDWIDTH_MBPS
+
+    RATE_MBPS=$BANDWIDTH_MBPS  # Direct assignment, no need for conversion
+
+    # Extract the last octet of the IP address for class ID and IFB device name
+    local LAST_OCTET=${IP_ADDRESS##*.}
+    local IFB_INTERFACE="ifb_$LAST_OCTET"
+
+    # Ensure IFB device is up and configured
+    ip link show $IFB_INTERFACE > /dev/null 2>&1 || {
+        ip link add name $IFB_INTERFACE type ifb
+        ip link set $IFB_INTERFACE up
+    }
+
+    # Setup for outbound traffic (download)
+    echo "Setting up download limiter..."
+    tc qdisc add dev $INTERFACE root handle 1: htb default 30 2>/dev/null || true
+    tc class add dev $INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_MBPS}mbit ceil ${RATE_MBPS}mbit
+    tc filter add dev $INTERFACE protocol ip parent 1: prio 1 u32 match ip dst $IP_ADDRESS flowid 1:$LAST_OCTET
+
+    # Setup for inbound traffic
+    echo "Setting up inbound limiter..."
+    tc qdisc add dev $INTERFACE handle ffff: ingress 2>/dev/null || true
+    tc filter add dev $INTERFACE parent ffff: matchall \
+        action mirred egress redirect dev $IFB_INTERFACE
+    tc qdisc add dev $IFB_INTERFACE root handle 1: htb default 30 2>/dev/null || true
+    tc class add dev $IFB_INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_MBPS}mbit ceil ${RATE_MBPS}mbit
+    tc filter add dev $IFB_INTERFACE protocol ip parent 1: prio 1 u32 \
+        match ip src $IP_ADDRESS flowid 1:$LAST_OCTET
+
+    echo "Bandwidth limit of $RATE_MBPS Mbps has been set for $IP_ADDRESS on both $INTERFACE and $IFB_INTERFACE for inbound and outbound traffic."
+}
+
+
+
+function showLimiters() {
+    local INTERFACE=${SERVER_WG_NIC}  # Use the WireGuard interface by default
+    echo "Current Bandwidth Limiters:"
+    echo "-------------------------------------"
+
+    # Retrieve classes from tc
+    local classes=$(tc class show dev $INTERFACE)
+
+    # Initialize counter
+    local counter=1
+
+    # Process each class
+    echo "$classes" | while IFS= read -r class_line; do
+        # Parse the classid using a more targeted regex pattern
+        if [[ $class_line =~ class\ htb\ ([0-9]+:[0-9]+)\  ]]; then
+            local classid="${BASH_REMATCH[1]}"
+            local minor=${classid##*:}  # Extract the minor number from the classid
+
+            # Parse rate directly
+            local rate_match=$(echo $class_line | grep -o 'rate [^ ]*')
+            local rate_in_mbps=$(echo $rate_match | cut -d ' ' -f 2 | sed 's/Mbit//')  # Extract and clean the rate value
+
+            echo "$counter) IP: $minor, Speed Rate Limit: ${rate_in_mbps}Mbps, ID: $classid"
+            ((counter++))
+        else
+            echo "$counter) Error retrieving Class ID from line: $class_line"
+            ((counter++))
+        fi
+    done
+
+    if [[ "$counter" -eq 1 ]]; then
+        echo "No more bandwidth limiters are currently set."
+    fi
+
+    echo "-------------------------------------"
+}
+
+
+
+
+function removeAllLimiters() {
+    local INTERFACE=${SERVER_WG_NIC}  # Use the WireGuard interface by default
+    local IFB_PREFIX="ifb_"           # Prefix used for IFB devices
+
+    echo "Removing all bandwidth limiters from $INTERFACE..."
+
+    # Remove all filters first
+    echo "Removing all filters from $INTERFACE..."
+    tc filter del dev $INTERFACE
+    
+    # Then remove all classes
+    echo "Removing all classes from $INTERFACE..."
+    tc class del dev $INTERFACE root
+
+    # Finally, remove the root qdisc
+    echo "Removing root qdisc from $INTERFACE..."
+    tc qdisc del dev $INTERFACE root
+
+    # Find all IFB devices related to this setup
+    local ifb_devices=$(ip link show type ifb | grep -oP "$IFB_PREFIX\S+")
+    for ifb_device in $ifb_devices; do
+        echo "Removing bandwidth limiters from $ifb_device..."
+
+        # Remove filters, classes, and root qdisc from IFB device
+        tc filter del dev $ifb_device
+        tc class del dev $ifb_device root
+        tc qdisc del dev $ifb_device root
+
+        # Delete the IFB device
+        ip link del $ifb_device
+        echo "$ifb_device removed successfully."
+    done
+
+    echo "All bandwidth limiters have been successfully removed from all interfaces."
+}
 
 
 
@@ -988,10 +1108,13 @@ function manageMenu() {
     echo "   11) List Port Forwarding Rules"
     echo "   12) Remove Port Forwarding Rule"
     echo "   13) Toggle Port Forwarding for All"
-    echo "   14) Exit"
+    echo "   14) Add Bandwidth Limiter"
+    echo "   15) Show Bandwidth Limiters"
+    echo "   16) Remove ALL Bandwidth Limiter"
+    echo "   17) Exit"
     
-    until [[ ${MENU_OPTION} =~ ^[1-9]$|^10$|^11$|^12$|^13$|^14$ ]]; do
-        read -rp "Select an option [1-14]: " MENU_OPTION
+    until [[ ${MENU_OPTION} =~ ^[1-9]$|^1[0-7]$ ]]; do
+        read -rp "Select an option [1-17]: " MENU_OPTION
     done
     
     case "${MENU_OPTION}" in
@@ -1035,10 +1158,20 @@ function manageMenu() {
         togglepfall      
         ;;
     14)
+        addLimiter
+        ;;
+    15)
+        showLimiters
+        ;;
+    16)
+        removeAllLimiters
+        ;;
+    17)
         exit 0
         ;;
     esac
 }
+
 
 
 
