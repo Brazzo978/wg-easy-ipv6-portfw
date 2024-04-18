@@ -5,7 +5,7 @@ This project aims to create an AIO wireguard install script with mixed function 
 ##Requirements 
 
 - Ubuntu >= 16.04
-- Debian = 10-11
+- Debian = 10-11-12
 
 for most use a vps with 1 core and 1gb of ram should be able to do around  100-500MB/s
 
@@ -38,5 +38,8 @@ It will install WireGuard (kernel module and tools) on the server, configure it,
 
 12) Remove a port forwarding you previusly defined (requires a reboot of the host )
 13) Enable or disable if enabled all the port forwarding defined , you can only enable if you have defined at least 1 .
-14) Exit from the script
+14) add a limiter ( beta function)
+15) list all limiters (beta) 
+16) remove ALL limiters (alpha)
+17) Exit from the script
 
