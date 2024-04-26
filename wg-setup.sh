@@ -968,21 +968,53 @@ togglepfall() {
 
 function addLimiter() {
     local IP_ADDRESS
-    local BANDWIDTH_MBPS  # Now directly in Mbps
+    local DOWNLOAD_MBPS
+    local UPLOAD_MBPS
     local INTERFACE=${SERVER_WG_NIC}  # Use the WireGuard interface by default
-    local RATE_MBPS
+    local RATE_DOWNLOAD
+    local RATE_UPLOAD
+    local LAST_OCTET
+    local IFB_INTERFACE
 
-    echo "Enter the IP address of the client you want to limit:"
-    read -rp "IP Address: " IP_ADDRESS
+    # Validate IP address
+    while true; do
+        echo "Enter the IP address of the client you want to limit:"
+        read -rp "IP Address: " IP_ADDRESS
+        if [[ $IP_ADDRESS =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            break
+        else
+            echo "Invalid IP address format. Please enter a valid IPv4 address."
+        fi
+    done
 
-    echo "Enter the bandwidth limit in Mbps for both download and inbound (e.g., 10 for 10Mbps):"
-    read -rp "Bandwidth (Mbps): " BANDWIDTH_MBPS
+    # Validate download bandwidth
+    while true; do
+        echo "Enter the download bandwidth limit in Mbps (e.g., 10 for 10Mbps):"
+        read -rp "Download Bandwidth (Mbps): " DOWNLOAD_MBPS
+        if [[ $DOWNLOAD_MBPS =~ ^[0-9]+$ ]] && [ $DOWNLOAD_MBPS -gt 0 ]; then
+            break
+        else
+            echo "Invalid input for download bandwidth. Please enter a positive integer."
+        fi
+    done
 
-    RATE_MBPS=$BANDWIDTH_MBPS  # Direct assignment, no need for conversion
+    # Validate upload bandwidth
+    while true; do
+        echo "Enter the upload bandwidth limit in Mbps (e.g., 10 for 10Mbps):"
+        read -rp "Upload Bandwidth (Mbps): " UPLOAD_MBPS
+        if [[ $UPLOAD_MBPS =~ ^[0-9]+$ ]] && [ $UPLOAD_MBPS -gt 0 ]; then
+            break
+        else
+            echo "Invalid input for upload bandwidth. Please enter a positive integer."
+        fi
+    done
+
+    RATE_DOWNLOAD=$DOWNLOAD_MBPS
+    RATE_UPLOAD=$UPLOAD_MBPS
 
     # Extract the last octet of the IP address for class ID and IFB device name
-    local LAST_OCTET=${IP_ADDRESS##*.}
-    local IFB_INTERFACE="ifb_$LAST_OCTET"
+    LAST_OCTET=${IP_ADDRESS##*.}
+    IFB_INTERFACE="ifb_$LAST_OCTET"
 
     # Ensure IFB device is up and configured
     ip link show $IFB_INTERFACE > /dev/null 2>&1 || {
@@ -993,21 +1025,22 @@ function addLimiter() {
     # Setup for outbound traffic (download)
     echo "Setting up download limiter..."
     tc qdisc add dev $INTERFACE root handle 1: htb default 30 2>/dev/null || true
-    tc class add dev $INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_MBPS}mbit ceil ${RATE_MBPS}mbit
+    tc class add dev $INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_DOWNLOAD}mbit ceil ${RATE_DOWNLOAD}mbit
     tc filter add dev $INTERFACE protocol ip parent 1: prio 1 u32 match ip dst $IP_ADDRESS flowid 1:$LAST_OCTET
 
-    # Setup for inbound traffic
+    # Setup for inbound traffic (upload)
     echo "Setting up inbound limiter..."
     tc qdisc add dev $INTERFACE handle ffff: ingress 2>/dev/null || true
     tc filter add dev $INTERFACE parent ffff: matchall \
         action mirred egress redirect dev $IFB_INTERFACE
     tc qdisc add dev $IFB_INTERFACE root handle 1: htb default 30 2>/dev/null || true
-    tc class add dev $IFB_INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_MBPS}mbit ceil ${RATE_MBPS}mbit
+    tc class add dev $IFB_INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_UPLOAD}mbit ceil ${RATE_UPLOAD}mbit
     tc filter add dev $IFB_INTERFACE protocol ip parent 1: prio 1 u32 \
         match ip src $IP_ADDRESS flowid 1:$LAST_OCTET
 
-    echo "Bandwidth limit of $RATE_MBPS Mbps has been set for $IP_ADDRESS on both $INTERFACE and $IFB_INTERFACE for inbound and outbound traffic."
+    echo "Bandwidth limits set: ${RATE_DOWNLOAD} Mbps download and ${RATE_UPLOAD} Mbps upload for $IP_ADDRESS on both $INTERFACE and $IFB_INTERFACE."
 }
+
 
 
 
@@ -1057,35 +1090,32 @@ function removeAllLimiters() {
 
     echo "Removing all bandwidth limiters from $INTERFACE..."
 
-    # Remove all filters first
-    echo "Removing all filters from $INTERFACE..."
-    tc filter del dev $INTERFACE
-    
-    # Then remove all classes
-    echo "Removing all classes from $INTERFACE..."
-    tc class del dev $INTERFACE root
+    # Attempt to replace current qdisc with noqueue to reset any state before deletion
+    tc qdisc replace dev $INTERFACE root handle 1: noqueue
 
-    # Finally, remove the root qdisc
-    echo "Removing root qdisc from $INTERFACE..."
-    tc qdisc del dev $INTERFACE root
+    # Attempt to remove all filters from INTERFACE, suppress errors for non-classful qdiscs
+    tc filter del dev $INTERFACE 2>/dev/null
 
-    # Find all IFB devices related to this setup
+    # Remove any classes if qdisc is classful, handle errors quietly
+    tc class del dev $INTERFACE root 2>/dev/null
+
+    # Remove the root qdisc
+    tc qdisc del dev $INTERFACE root 2>/dev/null
+
+    # Find and remove all related IFB devices
     local ifb_devices=$(ip link show type ifb | grep -oP "$IFB_PREFIX\S+")
     for ifb_device in $ifb_devices; do
         echo "Removing bandwidth limiters from $ifb_device..."
 
-        # Remove filters, classes, and root qdisc from IFB device
-        tc filter del dev $ifb_device
-        tc class del dev $ifb_device root
-        tc qdisc del dev $ifb_device root
-
-        # Delete the IFB device
+        # Remove any qdisc first, then the IFB device
+        tc qdisc del dev $ifb_device root 2>/dev/null
         ip link del $ifb_device
         echo "$ifb_device removed successfully."
     done
 
     echo "All bandwidth limiters have been successfully removed from all interfaces."
 }
+
 
 
 
