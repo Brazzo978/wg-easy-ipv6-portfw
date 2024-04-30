@@ -5,7 +5,7 @@ RED='\033[0;31m'
 ORANGE='\033[0;33m'
 GREEN='\033[0;32m'
 NC='\033[0m'
-REV="8"
+REV="9"
 
 function isRoot() {
 	if [ "${EUID}" -ne 0 ]; then
@@ -169,16 +169,16 @@ function installWireGuard() {
         apt-get install -y -t buster-backports wireguard
     fi
 
-	# Make sure the directory exists (this does not seem the be the case on fedora)
-	mkdir /etc/wireguard >/dev/null 2>&1
+    # Make sure the directory exists (this does not seem the be the case on fedora)
+    mkdir /etc/wireguard >/dev/null 2>&1
 
-	chmod 600 -R /etc/wireguard/
+    chmod 600 -R /etc/wireguard/
 
-	SERVER_PRIV_KEY=$(wg genkey)
-	SERVER_PUB_KEY=$(echo "${SERVER_PRIV_KEY}" | wg pubkey)
+    SERVER_PRIV_KEY=$(wg genkey)
+    SERVER_PUB_KEY=$(echo "${SERVER_PRIV_KEY}" | wg pubkey)
 
-	# Save WireGuard settings
-	echo "SERVER_PUB_IP=${SERVER_PUB_IP}
+    # Save WireGuard settings
+    echo "SERVER_PUB_IP=${SERVER_PUB_IP}
 SERVER_PUB_NIC=${SERVER_PUB_NIC}
 SERVER_WG_NIC=${SERVER_WG_NIC}
 SERVER_WG_IPV4=${SERVER_WG_IPV4}
@@ -190,16 +190,24 @@ CLIENT_DNS_1=${CLIENT_DNS_1}
 CLIENT_DNS_2=${CLIENT_DNS_2}
 ALLOWED_IPS=${ALLOWED_IPS}" >/etc/wireguard/params
 
-	# Add server interface
-	echo "[Interface]
+    # Create add_tc.sh with executable permissions
+    echo "#!/bin/bash
+
+# Placeholder for tc rules
+# Add your tc commands here" > /etc/wireguard/add_tc.sh
+    chmod u+x /etc/wireguard/add_tc.sh
+
+    # Add server interface configuration with PostUp and PostDown commands
+    echo "[Interface]
 Address = ${SERVER_WG_IPV4}/24,${SERVER_WG_IPV6}/64
 ListenPort = ${SERVER_PORT}
 PrivateKey = ${SERVER_PRIV_KEY}
 PostUp = /etc/wireguard/add-fullcone-nat.sh
+PostUp = /etc/wireguard/add_tc.sh
 PostDown = /etc/wireguard/rm-fullcone-nat.sh" >"/etc/wireguard/${SERVER_WG_NIC}.conf"
 
-# add-fullcone-nat.sh and rm-fullcone-nat.sh
-	echo "#!/bin/bash
+    # add-fullcone-nat.sh and rm-fullcone-nat.sh
+    echo "#!/bin/bash
 
 iptables -A FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
 iptables -A FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
@@ -208,7 +216,7 @@ ip6tables -A FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
 ip6tables -A FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
 ip6tables -t nat -A POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE" > "/etc/wireguard/add-fullcone-nat.sh"
 
-echo "#!/bin/bash
+    echo "#!/bin/bash
 
 iptables -D FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
 iptables -D FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
@@ -217,9 +225,10 @@ ip6tables -D FORWARD -i ${SERVER_PUB_NIC} -o ${SERVER_WG_NIC} -j ACCEPT
 ip6tables -D FORWARD -i ${SERVER_WG_NIC} -j ACCEPT
 ip6tables -t nat -D POSTROUTING -o ${SERVER_PUB_NIC} -j MASQUERADE" > "/etc/wireguard/rm-fullcone-nat.sh"
 
-	# Add exec permission
-	chmod u+x /etc/wireguard/add-fullcone-nat.sh
-	chmod u+x /etc/wireguard/rm-fullcone-nat.sh
+    # Add exec permission
+    chmod u+x /etc/wireguard/add-fullcone-nat.sh
+    chmod u+x /etc/wireguard/rm-fullcone-nat.sh
+
 
 # Create the wg-json file
 cat > /etc/wireguard/wg-json << 'EOL'
@@ -1016,30 +1025,26 @@ function addLimiter() {
     LAST_OCTET=${IP_ADDRESS##*.}
     IFB_INTERFACE="ifb_$LAST_OCTET"
 
-    # Ensure IFB device is up and configured
-    ip link show $IFB_INTERFACE > /dev/null 2>&1 || {
-        ip link add name $IFB_INTERFACE type ifb
-        ip link set $IFB_INTERFACE up
-    }
+    # Append commands to create and set up the IFB device
+    echo "## Start of $IP_ADDRESS tc rules" >> /etc/wireguard/add_tc.sh
+    echo "ip link show $IFB_INTERFACE > /dev/null 2>&1 || { ip link add name $IFB_INTERFACE type ifb; ip link set $IFB_INTERFACE up; }" >> /etc/wireguard/add_tc.sh
+    echo "tc qdisc add dev $INTERFACE root handle 1: htb default 30" >> /etc/wireguard/add_tc.sh
+    echo "tc class add dev $INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_DOWNLOAD}mbit ceil ${RATE_DOWNLOAD}mbit" >> /etc/wireguard/add_tc.sh
+    echo "tc filter add dev $INTERFACE protocol ip parent 1: prio 1 u32 match ip dst $IP_ADDRESS flowid 1:$LAST_OCTET" >> /etc/wireguard/add_tc.sh
+    echo "tc qdisc add dev $INTERFACE handle ffff: ingress" >> /etc/wireguard/add_tc.sh
+    echo "tc filter add dev $INTERFACE parent ffff: matchall action mirred egress redirect dev $IFB_INTERFACE" >> /etc/wireguard/add_tc.sh
+    echo "tc qdisc add dev $IFB_INTERFACE root handle 1: htb default 30" >> /etc/wireguard/add_tc.sh
+    echo "tc class add dev $IFB_INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_UPLOAD}mbit ceil ${RATE_UPLOAD}mbit" >> /etc/wireguard/add_tc.sh
+    echo "tc filter add dev $IFB_INTERFACE protocol ip parent 1: prio 1 u32 match ip src $IP_ADDRESS flowid 1:$LAST_OCTET" >> /etc/wireguard/add_tc.sh
+    echo "## End of $IP_ADDRESS tc rules" >> /etc/wireguard/add_tc.sh
 
-    # Setup for outbound traffic (download)
-    echo "Setting up download limiter..."
-    tc qdisc add dev $INTERFACE root handle 1: htb default 30 2>/dev/null || true
-    tc class add dev $INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_DOWNLOAD}mbit ceil ${RATE_DOWNLOAD}mbit
-    tc filter add dev $INTERFACE protocol ip parent 1: prio 1 u32 match ip dst $IP_ADDRESS flowid 1:$LAST_OCTET
+    # Execute the add_tc.sh script to apply settings immediately
+    bash /etc/wireguard/add_tc.sh
 
-    # Setup for inbound traffic (upload)
-    echo "Setting up inbound limiter..."
-    tc qdisc add dev $INTERFACE handle ffff: ingress 2>/dev/null || true
-    tc filter add dev $INTERFACE parent ffff: matchall \
-        action mirred egress redirect dev $IFB_INTERFACE
-    tc qdisc add dev $IFB_INTERFACE root handle 1: htb default 30 2>/dev/null || true
-    tc class add dev $IFB_INTERFACE parent 1: classid 1:$LAST_OCTET htb rate ${RATE_UPLOAD}mbit ceil ${RATE_UPLOAD}mbit
-    tc filter add dev $IFB_INTERFACE protocol ip parent 1: prio 1 u32 \
-        match ip src $IP_ADDRESS flowid 1:$LAST_OCTET
-
-    echo "Bandwidth limits set: ${RATE_DOWNLOAD} Mbps download and ${RATE_UPLOAD} Mbps upload for $IP_ADDRESS on both $INTERFACE and $IFB_INTERFACE."
+    echo "Bandwidth limits set and applied immediately: ${RATE_DOWNLOAD} Mbps download and ${RATE_UPLOAD} Mbps upload for $IP_ADDRESS, please consider rebooting."
 }
+
+
 
 
 
@@ -1113,8 +1118,13 @@ function removeAllLimiters() {
         echo "$ifb_device removed successfully."
     done
 
+    # Clear all but the first line in add_tc.sh
+    echo "Resetting traffic control script..."
+    sed -i '1!d' /etc/wireguard/add_tc.sh  # Keeps the first line, deletes the rest
+
     echo "All bandwidth limiters have been successfully removed from all interfaces."
 }
+
 
 
 
