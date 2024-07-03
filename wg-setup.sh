@@ -190,12 +190,23 @@ CLIENT_DNS_1=${CLIENT_DNS_1}
 CLIENT_DNS_2=${CLIENT_DNS_2}
 ALLOWED_IPS=${ALLOWED_IPS}" >/etc/wireguard/params
 
-    # Create add_tc.sh with executable permissions
-    echo "#!/bin/bash
+# Create add_tc.sh with executable permissions
+echo "#!/bin/bash
 
 # Placeholder for tc rules
 # Add your tc commands here" > /etc/wireguard/add_tc.sh
-    chmod u+x /etc/wireguard/add_tc.sh
+
+# Create port_fwd_up.sh with executable permissions
+echo "#!/bin/bash" > /etc/wireguard/port_fwd_up.sh
+
+# Create port_fwd_down.sh with executable permissions
+echo "#!/bin/bash" > /etc/wireguard/port_fwd_down.sh
+
+# Make the scripts executable
+chmod u+x /etc/wireguard/add_tc.sh
+chmod u+x /etc/wireguard/port_fwd_up.sh
+chmod u+x /etc/wireguard/port_fwd_down.sh
+
 
     # Add server interface configuration with PostUp and PostDown commands
     echo "[Interface]
@@ -204,6 +215,8 @@ ListenPort = ${SERVER_PORT}
 PrivateKey = ${SERVER_PRIV_KEY}
 PostUp = /etc/wireguard/add-fullcone-nat.sh
 PostUp = /etc/wireguard/add_tc.sh
+PostUp = /etc/wireguard/port_fwd_up.sh
+PostDown = /etc/wireguard/port_fwd_down.sh
 PostDown = /etc/wireguard/rm-fullcone-nat.sh" >"/etc/wireguard/${SERVER_WG_NIC}.conf"
 
     # add-fullcone-nat.sh and rm-fullcone-nat.sh
@@ -945,36 +958,6 @@ done
     echo "Rule removed successfully!"
 }
 
-togglepfall() {
-    WG_CONF="/etc/wireguard/wg0.conf"
-    UP_RULE="/etc/wireguard/port_fwd_up.sh"
-    DOWN_RULE="/etc/wireguard/port_fwd_down.sh"
-
-    # The two lines we want to add or remove
-    LINE1="PostUp = /etc/wireguard/port_fwd_up.sh"
-    LINE2="PostDown = /etc/wireguard/port_fwd_down.sh"
-
-    # First, let's check if the required port forwarding files exist
-    if [[ ! -f $UP_RULE ]] || [[ ! -f $DOWN_RULE ]]; then
-        echo "No port forwarding rules defined. Run option 10 at least once before enabling."
-        return
-    fi
-
-    # Check if the specific lines are already present in the config file
-    if grep -q "^$LINE1$" "$WG_CONF"; then
-        # Remove both PostUp and PostDown rules
-        sed -i "\|^$LINE1$|d" "$WG_CONF"
-        sed -i "\|^$LINE2$|d" "$WG_CONF"
-        echo "Port forwarding rules have been disabled."
-    else
-        # Insert the rules before the "### Client" line in a temporary file and then replace the original file
-        awk -v line1="$LINE1" -v line2="$LINE2" '/^### Client / {print line1; print line2; print; next} 1' "$WG_CONF" > "${WG_CONF}.tmp" && mv "${WG_CONF}.tmp" "$WG_CONF"
-        echo "Port forwarding rules have been enabled."
-    fi
-}
-
-
-
 function addLimiter() {
     local IP_ADDRESS
     local DOWNLOAD_MBPS
@@ -1147,14 +1130,13 @@ function manageMenu() {
     echo "   10) Add Port Forwarding Rule"
     echo "   11) List Port Forwarding Rules"
     echo "   12) Remove Port Forwarding Rule"
-    echo "   13) Toggle Port Forwarding for All"
-    echo "   14) Add Bandwidth Limiter"
-    echo "   15) Show Bandwidth Limiters"
-    echo "   16) Remove ALL Bandwidth Limiter"
-    echo "   17) Exit"
+    echo "   13) Add Bandwidth Limiter"
+    echo "   14) Show Bandwidth Limiters"
+    echo "   15) Remove ALL Bandwidth Limiter"
+    echo "   16) Exit"
     
-    until [[ ${MENU_OPTION} =~ ^[1-9]$|^1[0-7]$ ]]; do
-        read -rp "Select an option [1-17]: " MENU_OPTION
+    until [[ ${MENU_OPTION} =~ ^[1-9]$|^1[0-6]$ ]]; do
+        read -rp "Select an option [1-16]: " MENU_OPTION
     done
     
     case "${MENU_OPTION}" in
@@ -1195,18 +1177,15 @@ function manageMenu() {
         removepfrules   
         ;;
     13)
-        togglepfall      
-        ;;
-    14)
         addLimiter
         ;;
-    15)
+    14)
         showLimiters
         ;;
-    16)
+    15)
         removeAllLimiters
         ;;
-    17)
+    16)
         exit 0
         ;;
     esac
