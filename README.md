@@ -31,15 +31,14 @@ It will install WireGuard (kernel module and tools) on the server, configure it,
 ![image](https://github.com/Brazzo978/wg-easy-ipv6-portfw/assets/55558507/5fbdc1b0-fb88-4752-ab33-23451a8df1b2)
 8) EXPERIMENTAL!! checks if the script has been updated and if a new version is there ask the user if it wants to update
 9) let you put the script in /usr/bin so that you can call the script with the name wg-setup ( its a toggle so you can add and remove as you wish )
-10) wizard for adding a port forwarding rule to a determined user , it will ask you the ip address you'd like to open a port and a port or a port range (ex: 80 or  100-6500) (requires 13 to be enabled and a reboot ) 
+10) wizard for adding a port forwarding rule to a determined user , it will ask you the ip address you'd like to open a port and a port or a port range (ex: 80 or  100-6500) (requires a reboot ) 
 11) List in a readable form the port forwarding rules you defined
 
 ![image](https://github.com/Brazzo978/wg-easy-ipv6-portfw/assets/55558507/8b1edf3a-134f-48bd-90f2-376b854702e5)
 
 12) Remove a port forwarding you previusly defined (requires a reboot of the host )
-13) Enable or disable if enabled all the port forwarding defined , you can only enable if you have defined at least 1 .
-14) add a limiter ( beta function , as of now it works only with 1 client at a time , and ipv4 only(ipv6 and subnet cant be limited for now))
-15) list all limiters (beta, will list only the upload part , and will most of the time list false warning idk why) 
-16) remove ALL limiters (beta , once used check with ip a for remaining ifb device that should be there)
-17) Exit from the script
+13) add a limiter ( beta function , as of now it works only with 1 client at a time , and ipv4 only(ipv6 and subnet cant be limited for now))
+14) list all limiters (beta, will list only the upload part , and will most of the time list false warning idk why) 
+15) remove ALL limiters (beta , once used check with ip a for remaining ifb device that should be there)
+16) Exit from the script
 
