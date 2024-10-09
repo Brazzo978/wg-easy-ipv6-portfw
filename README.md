@@ -5,7 +5,7 @@ This project aims to create an AIO wireguard install script with mixed function 
 #Requirements 
 
 - Ubuntu >= 16.04
-- Debian = 10-12
+- Debian = 10+
 
 for most use a vps with 1 core and 1gb of ram should be able to do around  100-500MB/s
 
