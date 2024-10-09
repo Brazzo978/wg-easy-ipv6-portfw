@@ -2,7 +2,7 @@
 This project aims to create an AIO wireguard install script with mixed function , for gaming,torrenting,ipv6 tunnell brocker,DYI Vpn ...
 
 
-##Requirements 
+#Requirements 
 
 - Ubuntu >= 16.04
 - Debian = 10-12
