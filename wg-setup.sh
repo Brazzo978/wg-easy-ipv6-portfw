@@ -1116,24 +1116,36 @@ function removeAllLimiters() {
 
 function toggleGUI() {
     GUI_FILE="/var/www/html/index.php"
+    read -rp "Imposta nuova password per la GUI (lascia vuoto per mantenere quella attuale): " NEWPASS
+
     if systemctl is-active --quiet apache2 && [ -f "$GUI_FILE" ]; then
-        read -rp "GUI is active. Disable it? [y/N]: " choice
+        read -rp "GUI is attiva. Disabilitarla? [y/N]: " choice
         if [[ ${choice,,} == "y" ]]; then
             systemctl disable --now apache2
             rm -f "$GUI_FILE"
             sed -i '/Listen 65535/d' /etc/apache2/ports.conf
             sed -i 's/<VirtualHost \*:65535>/<VirtualHost *:80>/' /etc/apache2/sites-available/000-default.conf 2>/dev/null
-            echo "GUI disabled."
+            echo "GUI disabilitata."
         else
-            echo "No changes made."
+            echo "Nessuna modifica effettuata."
         fi
     else
-        read -rp "GUI is inactive. Enable it? [y/N]: " choice
+        read -rp "GUI è inattiva. Abilitarla? [y/N]: " choice
         if [[ ${choice,,} == "y" ]]; then
             apt-get update
-            apt-get install -y apache2 curl php libapache2-mod-php
+            apt-get install -y apache2 curl php libapache2-mod-php acl
             curl -fsSL "https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/refs/heads/gui/index.php" -o "$GUI_FILE"
+            # Imposta proprietario e ACL
             chown www-data:www-data "$GUI_FILE"
+            setfacl -m u:www-data:rx /root
+            setfacl -m u:www-data:r /root/wg0-client-*.conf
+
+            # Se l'utente ha inserito una nuova password, la sostituiamo nel PHP
+            if [[ -n "$NEWPASS" ]]; then
+                sed -i "s/\(\$admin_pass\s*=\s*['\"][^'\"]*['\"];\)/\$admin_pass = '$NEWPASS';/" "$GUI_FILE"
+                echo "Password GUI aggiornata."
+            fi
+
             rm -f /var/www/html/index.html
             if ! grep -q 'Listen 65535' /etc/apache2/ports.conf; then
                 echo 'Listen 65535' >> /etc/apache2/ports.conf
@@ -1141,9 +1153,9 @@ function toggleGUI() {
             sed -i 's/<VirtualHost \*:[0-9]\+>/<VirtualHost *:65535>/' /etc/apache2/sites-available/000-default.conf
             systemctl enable apache2
             systemctl restart apache2
-            echo "GUI enabled on port 65535."
+            echo "GUI abilitata su porta 65535."
         else
-            echo "No changes made."
+            echo "Nessuna modifica effettuata."
         fi
     fi
 }
