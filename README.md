@@ -38,7 +38,8 @@ It will install WireGuard (kernel module and tools) on the server, configure it,
 
 12) Remove a port forwarding you previusly defined (requires a reboot of the host )
 13) add a limiter ( beta function , as of now it works only with 1 client at a time , and ipv4 only(ipv6 and subnet cant be limited for now))
-14) list all limiters (beta, will list only the upload part , and will most of the time list false warning idk why) 
+14) list all limiters (beta, will list only the upload part , and will most of the time list false warning idk why)
 15) remove ALL limiters (beta , once used check with ip a for remaining ifb device that should be there)
-16) Exit from the script
+16) Toggle Web GUI (install/remove Apache dashboard on port 65535)
+17) Exit from the script
 

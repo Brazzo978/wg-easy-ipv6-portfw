@@ -114,9 +114,9 @@ function installQuestions() {
 	done
 
 	# Generate random number within specified range
-    RANDOM_PORT=$(shuf -i65523-65535 -n1)
-    until [[ ${SERVER_PORT} =~ ^[0-9]+$ ]] && [ "${SERVER_PORT}" -ge 65523 ] && [ "${SERVER_PORT}" -le 65535 ]; do
-    read -rp "Server WireGuard port [65523-65535]: " -e -i "${RANDOM_PORT}" SERVER_PORT
+    RANDOM_PORT=$(shuf -i65523-65534 -n1)
+    until [[ ${SERVER_PORT} =~ ^[0-9]+$ ]] && [ "${SERVER_PORT}" -ge 65523 ] && [ "${SERVER_PORT}" -le 65534 ]; do
+    read -rp "Server WireGuard port [65523-65534]: " -e -i "${RANDOM_PORT}" SERVER_PORT
     done
     # Check if ssh is in range
 	 if [[ (${SSH_CLIENT##* } -ge 1 && ${SSH_CLIENT##* } -le 65500 ) ]]; then
@@ -1108,6 +1108,39 @@ function removeAllLimiters() {
     echo "All bandwidth limiters have been successfully removed from all interfaces."
 }
 
+function toggleGUI() {
+    GUI_FILE="/var/www/html/index.php"
+    if systemctl is-active --quiet apache2 && [ -f "$GUI_FILE" ]; then
+        read -rp "GUI is active. Disable it? [y/N]: " choice
+        if [[ ${choice,,} == "y" ]]; then
+            systemctl disable --now apache2
+            rm -f "$GUI_FILE"
+            sed -i '/Listen 65535/d' /etc/apache2/ports.conf
+            sed -i 's/<VirtualHost \*:65535>/<VirtualHost *:80>/' /etc/apache2/sites-available/000-default.conf 2>/dev/null
+            echo "GUI disabled."
+        else
+            echo "No changes made."
+        fi
+    else
+        read -rp "GUI is inactive. Enable it? [y/N]: " choice
+        if [[ ${choice,,} == "y" ]]; then
+            apt-get update
+            apt-get install -y apache2 curl
+            curl -fsSL "https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/refs/heads/gui/index.php" -o "$GUI_FILE"
+            chown www-data:www-data "$GUI_FILE"
+            if ! grep -q 'Listen 65535' /etc/apache2/ports.conf; then
+                echo 'Listen 65535' >> /etc/apache2/ports.conf
+            fi
+            sed -i 's/<VirtualHost \*:[0-9]\+>/<VirtualHost *:65535>/' /etc/apache2/sites-available/000-default.conf
+            systemctl enable apache2
+            systemctl restart apache2
+            echo "GUI enabled on port 65535."
+        else
+            echo "No changes made."
+        fi
+    fi
+}
+
 
 
 
@@ -1133,10 +1166,11 @@ function manageMenu() {
     echo "   13) Add Bandwidth Limiter"
     echo "   14) Show Bandwidth Limiters"
     echo "   15) Remove ALL Bandwidth Limiter"
-    echo "   16) Exit"
-    
-    until [[ ${MENU_OPTION} =~ ^[1-9]$|^1[0-6]$ ]]; do
-        read -rp "Select an option [1-16]: " MENU_OPTION
+    echo "   16) Toggle Web GUI"
+    echo "   17) Exit"
+
+    until [[ ${MENU_OPTION} =~ ^[1-9]$|^1[0-7]$ ]]; do
+        read -rp "Select an option [1-17]: " MENU_OPTION
     done
     
     case "${MENU_OPTION}" in
@@ -1186,6 +1220,9 @@ function manageMenu() {
         removeAllLimiters
         ;;
     16)
+        toggleGUI
+        ;;
+    17)
         exit 0
         ;;
     esac
