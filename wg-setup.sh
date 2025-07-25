@@ -5,7 +5,7 @@ RED='\033[0;31m'
 ORANGE='\033[0;33m'
 GREEN='\033[0;32m'
 NC='\033[0m'
-REV="10"
+REV="11"
 
 function isRoot() {
 	if [ "${EUID}" -ne 0 ]; then
@@ -546,27 +546,33 @@ function uninstallWg() {
 		systemctl stop "wg-quick@${SERVER_WG_NIC}"
 		systemctl disable "wg-quick@${SERVER_WG_NIC}"
 
-		if [[ ${OS} == 'ubuntu' ]]; then
-			apt-get remove -y wireguard wireguard-tools qrencode
-		elif [[ ${OS} == 'debian' ]]; then
-			apt-get remove -y wireguard wireguard-tools qrencode
-		elif [[ ${OS} == 'fedora' ]]; then
-			dnf remove -y --noautoremove wireguard-tools qrencode
-			if [[ ${VERSION_ID} -lt 32 ]]; then
-				dnf remove -y --noautoremove wireguard-dkms
-				dnf copr disable -y jdoss/wireguard
-			fi
-		elif [[ ${OS} == 'centos' ]] || [[ ${OS} == 'almalinux' ]] || [[ ${OS} == 'rocky' ]]; then
-			yum remove -y --noautoremove wireguard-tools
-			if [[ ${VERSION_ID} == 8* ]]; then
-				yum remove --noautoremove kmod-wireguard qrencode
-			fi
-		elif [[ ${OS} == 'oracle' ]]; then
-			yum remove --noautoremove wireguard-tools qrencode
-		elif [[ ${OS} == 'arch' ]]; then
-			pacman -Rs --noconfirm wireguard-tools qrencode
-		fi
+                if [[ ${OS} == 'ubuntu' ]]; then
+                        apt-get remove -y wireguard wireguard-tools qrencode
+                        apt-get purge -y apache2 php libapache2-mod-php
+                elif [[ ${OS} == 'debian' ]]; then
+                        apt-get remove -y wireguard wireguard-tools qrencode
+                        apt-get purge -y apache2 php libapache2-mod-php
+                elif [[ ${OS} == 'fedora' ]]; then
+                        dnf remove -y --noautoremove wireguard-tools qrencode
+                        if [[ ${VERSION_ID} -lt 32 ]]; then
+                                dnf remove -y --noautoremove wireguard-dkms
+                                dnf copr disable -y jdoss/wireguard
+                        fi
+                elif [[ ${OS} == 'centos' ]] || [[ ${OS} == 'almalinux' ]] || [[ ${OS} == 'rocky' ]]; then
+                        yum remove -y --noautoremove wireguard-tools
+                        yum remove -y --noautoremove httpd php
+                        if [[ ${VERSION_ID} == 8* ]]; then
+                                yum remove --noautoremove kmod-wireguard qrencode
+                        fi
+                elif [[ ${OS} == 'oracle' ]]; then
+                        yum remove --noautoremove wireguard-tools qrencode
+                elif [[ ${OS} == 'arch' ]]; then
+                        pacman -Rs --noconfirm wireguard-tools qrencode
+                        pacman -Rs --noconfirm apache php
+                fi
 
+                rm -f /var/www/html/index.php
+                
 		rm -rf /etc/wireguard
 		rm -f /etc/sysctl.d/wg.conf
 
@@ -1125,9 +1131,10 @@ function toggleGUI() {
         read -rp "GUI is inactive. Enable it? [y/N]: " choice
         if [[ ${choice,,} == "y" ]]; then
             apt-get update
-            apt-get install -y apache2 curl
+            apt-get install -y apache2 curl php libapache2-mod-php
             curl -fsSL "https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/refs/heads/gui/index.php" -o "$GUI_FILE"
             chown www-data:www-data "$GUI_FILE"
+            rm -f /var/www/html/index.html
             if ! grep -q 'Listen 65535' /etc/apache2/ports.conf; then
                 echo 'Listen 65535' >> /etc/apache2/ports.conf
             fi
