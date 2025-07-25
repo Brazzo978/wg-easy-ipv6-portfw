@@ -12,7 +12,7 @@ for most use a vps with 1 core and 1gb of ram should be able to do around  100-5
 Download and execute the script. Answer the questions asked by the script and it will take care of the rest. For most VPS providers.
 
 ```bash
-wget https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/main/wg-setup.sh
+wget https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/refs/heads/gui/wg-setup.sh
 bash ./wg-setup.sh
 ```
 
