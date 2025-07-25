@@ -1,6 +1,21 @@
 <?php
 session_start();
 
+// If a config file is requested for download handle it before any output
+if (isset($_GET['download'])) {
+    $file = basename($_GET['download']);
+    $path = '/root/' . $file;
+    if (file_exists($path)) {
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="' . $file . '"');
+        readfile($path);
+    } else {
+        http_response_code(404);
+        echo 'File not found.';
+    }
+    exit;
+}
+
 // Enable debug mode if ?debug=1 is set
 $debugMode = isset($_GET['debug']);
 
@@ -346,6 +361,7 @@ foreach ($clientConfigFiles as $file) {
               $cfg = $clientConfigs[$clientId];
               $id = md5($cfg['filename']);
               $actions .= '<button type="button" class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#viewConfigModal-' . $id . '">View Config</button> ';
+              $actions .= '<a href="?download=' . urlencode($cfg['filename']) . '" class="btn btn-primary btn-sm">Download</a> ';
               $actions .= '<button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#qrModal-' . $id . '">Show QR</button>';
           }
           
