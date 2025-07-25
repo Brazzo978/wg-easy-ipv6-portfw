@@ -1116,10 +1116,9 @@ function removeAllLimiters() {
 
 function toggleGUI() {
     GUI_FILE="/var/www/html/index.php"
-    read -rp "Imposta nuova password per la GUI (lascia vuoto per mantenere quella attuale): " NEWPASS
 
     if systemctl is-active --quiet apache2 && [ -f "$GUI_FILE" ]; then
-        read -rp "GUI is attiva. Disabilitarla? [y/N]: " choice
+        read -rp "GUI è attiva. Disabilitarla? [y/N]: " choice
         if [[ ${choice,,} == "y" ]]; then
             systemctl disable --now apache2
             rm -f "$GUI_FILE"
@@ -1132,13 +1131,29 @@ function toggleGUI() {
     else
         read -rp "GUI è inattiva. Abilitarla? [y/N]: " choice
         if [[ ${choice,,} == "y" ]]; then
+            # Chiedo la nuova password solo al momento dell'abilitazione
+            read -rp "Imposta nuova password per la GUI (lascia vuoto per mantenere quella attuale): " NEWPASS
+
             apt-get update
-            apt-get install -y apache2 curl php libapache2-mod-php acl
+            DEBIAN_FRONTEND=noninteractive apt-get install -y apache2 curl php-fpm acl
+
+            # abilita PHP-FPM e moduli proxy
+            a2enmod proxy_fcgi setenvif
+            a2enconf php*-fpm
+
+            # scarica la GUI
             curl -fsSL "https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/refs/heads/gui/index.php" -o "$GUI_FILE"
-            # Imposta proprietario e ACL
             chown www-data:www-data "$GUI_FILE"
-            setfacl -m u:www-data:rx /root
-            setfacl -m u:www-data:r /root/wg0-client-*.conf
+
+            # imposta ACL per accedere ai client WireGuard
+            CLIENT_DIR="/etc/wireguard/clients"
+            mkdir -p "$CLIENT_DIR"
+            mv /root/wg0-client-*.conf "$CLIENT_DIR" 2>/dev/null || true
+            chown root:www-data "$CLIENT_DIR"
+            chmod 750 "$CLIENT_DIR"
+            setfacl -m u:www-data:x /etc/wireguard
+            setfacl -m u:www-data:rx "$CLIENT_DIR"
+            setfacl -m u:www-data:r "$CLIENT_DIR"/*.conf
 
             # Se l'utente ha inserito una nuova password, la sostituiamo nel PHP
             if [[ -n "$NEWPASS" ]]; then
@@ -1146,21 +1161,45 @@ function toggleGUI() {
                 echo "Password GUI aggiornata."
             fi
 
+            # rimuovi index.html di default
             rm -f /var/www/html/index.html
-            if ! grep -q 'Listen 65535' /etc/apache2/ports.conf; then
-                echo 'Listen 65535' >> /etc/apache2/ports.conf
-            fi
-            sed -i 's/<VirtualHost \*:[0-9]\+>/<VirtualHost *:65535>/' /etc/apache2/sites-available/000-default.conf
-            systemctl enable apache2
+
+            # apri la porta 65535
+            grep -q 'Listen 65535' /etc/apache2/ports.conf || echo 'Listen 65535' >> /etc/apache2/ports.conf
+
+            # ricrea vhost su 65535 con ProxyPassMatch per FPM
+            cat > /etc/apache2/sites-available/000-default.conf <<EOF
+<VirtualHost *:65535>
+    ServerAdmin webmaster@localhost
+    DocumentRoot /var/www/html
+
+    <Directory /var/www/html>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    DirectoryIndex index.php index.html
+
+    <FilesMatch "\\.php$">
+        SetHandler "proxy:unix:/run/php/php-fpm.sock|fcgi://localhost/"
+    </FilesMatch>
+
+    ErrorLog \${APACHE_LOG_DIR}/error.log
+    CustomLog \${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+EOF
+
+            a2ensite 000-default.conf
+            systemctl enable --now apache2
             systemctl restart apache2
-            echo "GUI abilitata su porta 65535."
+
+            echo "GUI abilitata su porta 65535 con PHP-FPM."
         else
             echo "Nessuna modifica effettuata."
         fi
     fi
 }
-
-
 
 
 
