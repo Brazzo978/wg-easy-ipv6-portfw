@@ -1145,15 +1145,13 @@ function toggleGUI() {
             curl -fsSL "https://raw.githubusercontent.com/Brazzo978/wg-easy-ipv6-portfw/refs/heads/gui/index.php" -o "$GUI_FILE"
             chown www-data:www-data "$GUI_FILE"
 
-            # imposta ACL per accedere ai client WireGuard
-            CLIENT_DIR="/etc/wireguard/clients"
-            mkdir -p "$CLIENT_DIR"
-            mv /root/wg0-client-*.conf "$CLIENT_DIR" 2>/dev/null || true
-            chown root:www-data "$CLIENT_DIR"
-            chmod 750 "$CLIENT_DIR"
-            setfacl -m u:www-data:x /etc/wireguard
-            setfacl -m u:www-data:rx "$CLIENT_DIR"
-            setfacl -m u:www-data:r "$CLIENT_DIR"/*.conf
+            # abilita l'accesso di www-data ai file di configurazione
+            usermod -aG root www-data
+            chmod 750 /etc/wireguard 2>/dev/null || true
+            chmod 640 /etc/wireguard/wg0.conf 2>/dev/null || true
+
+            chmod 750 /root
+            chmod 640 /root/wg0-client-*.conf 2>/dev/null || true
 
             # Se l'utente ha inserito una nuova password, la sostituiamo nel PHP
             if [[ -n "$NEWPASS" ]]; then
