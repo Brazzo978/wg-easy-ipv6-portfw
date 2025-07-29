@@ -7,7 +7,24 @@ $admin_pass = 'password';  // password GUI modificata dallo script toggleGUI()
 
 // Read theme settings from cookies
 $mode = (isset($_COOKIE['mode']) && $_COOKIE['mode'] === 'dark') ? 'dark' : 'light';
+
+// Predefined accent colors
+$predefinedColors = [
+    '#20c997' => 'Teal',
+    '#0d6efd' => 'Blue',
+    '#6f42c1' => 'Purple',
+    '#d63384' => 'Pink',
+    '#dc3545' => 'Red',
+    '#fd7e14' => 'Orange',
+    '#ffc107' => 'Yellow',
+    '#198754' => 'Green'
+];
+
+// Get accent from cookie and validate against predefined list
 $accent = $_COOKIE['accent'] ?? '#20c997'; // default teal
+if (!array_key_exists(strtolower($accent), array_change_key_case($predefinedColors, CASE_LOWER))) {
+    $accent = '#20c997';
+}
 
 // If a config file is requested for download handle it before any output
 if (isset($_GET['download'])) {
@@ -68,7 +85,13 @@ if (!isset($_SESSION['logged'])) {
               <div class="card-header bg-accent text-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Login</h5>
                 <div class="d-flex align-items-center">
-                  <input type="color" id="accentPicker" value="<?= htmlspecialchars($accent) ?>" class="form-control form-control-color me-2" title="Accent color">
+                  <select id="accentSelect" class="form-select form-select-sm me-2">
+                    <?php foreach($predefinedColors as $hex => $name): ?>
+                      <option value="<?= $hex ?>" <?= strtolower($accent) === strtolower($hex) ? 'selected' : '' ?> style="background-color: <?= $hex ?>; color: #fff;">
+                        <?= $name ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
                   <button type="button" id="modeToggle" class="btn btn-light btn-sm">Toggle Mode</button>
                 </div>
               </div>
@@ -93,7 +116,7 @@ if (!isset($_SESSION['logged'])) {
       <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
       <script>
         const modeToggle = document.getElementById('modeToggle');
-        const accentPicker = document.getElementById('accentPicker');
+        const accentSelect = document.getElementById('accentSelect');
         if (modeToggle) {
           modeToggle.addEventListener('click', () => {
             const newMode = document.documentElement.getAttribute('data-bs-theme') === 'light' ? 'dark' : 'light';
@@ -101,8 +124,8 @@ if (!isset($_SESSION['logged'])) {
             document.documentElement.setAttribute('data-bs-theme', newMode);
           });
         }
-        if (accentPicker) {
-          accentPicker.addEventListener('input', (e) => {
+        if (accentSelect) {
+          accentSelect.addEventListener('change', (e) => {
             document.documentElement.style.setProperty('--accent-color', e.target.value);
             document.cookie = 'accent=' + e.target.value + ';path=/;max-age=' + 60*60*24*365;
           });
@@ -343,7 +366,13 @@ foreach ($clientConfigFiles as $file) {
   <div class="container">
     <a class="navbar-brand" href="#">WireGuard Dashboard</a>
     <div class="d-flex ms-auto align-items-center">
-      <input type="color" id="accentPicker" value="<?= htmlspecialchars($accent) ?>" class="form-control form-control-color me-2" title="Accent color">
+      <select id="accentSelect" class="form-select form-select-sm me-2">
+        <?php foreach($predefinedColors as $hex => $name): ?>
+          <option value="<?= $hex ?>" <?= strtolower($accent) === strtolower($hex) ? 'selected' : '' ?> style="background-color: <?= $hex ?>; color: #fff;">
+            <?= $name ?>
+          </option>
+        <?php endforeach; ?>
+      </select>
       <button type="button" id="modeToggle" class="btn btn-light btn-sm me-2">Toggle Mode</button>
       <a class="btn btn-outline-light btn-sm me-2" href="?logout=true">Logout</a>
       <?php if($debugMode): ?>
@@ -476,7 +505,7 @@ foreach ($clientConfigFiles as $file) {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   const modeToggle = document.getElementById('modeToggle');
-  const accentPicker = document.getElementById('accentPicker');
+  const accentSelect = document.getElementById('accentSelect');
   if (modeToggle) {
     modeToggle.addEventListener('click', () => {
       const newMode = document.documentElement.getAttribute('data-bs-theme') === 'light' ? 'dark' : 'light';
@@ -484,8 +513,8 @@ foreach ($clientConfigFiles as $file) {
       document.documentElement.setAttribute('data-bs-theme', newMode);
     });
   }
-  if (accentPicker) {
-    accentPicker.addEventListener('input', (e) => {
+  if (accentSelect) {
+    accentSelect.addEventListener('change', (e) => {
       document.documentElement.style.setProperty('--accent-color', e.target.value);
       document.cookie = 'accent=' + e.target.value + ';path=/;max-age=' + 60*60*24*365;
     });
