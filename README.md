@@ -43,3 +43,4 @@ It will install WireGuard (kernel module and tools) on the server, configure it,
 16) Toggle Web GUI (install/remove Apache dashboard on port 65535)
 17) Exit from the script
 
+- The dashboard now refreshes client status dynamically without closing modals using AJAX polling in a single index.php.
