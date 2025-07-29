@@ -179,8 +179,7 @@ function convertToBytes($valueStr) {
 }
 
 /**
- * Parses the transfer string (e.g. "1.43 GiB received, 2.57 GiB sent")
- * and returns the total formatted in an appropriate unit.
+ * Parses the transfer string and returns the total formatted.
  */
 function parseTransfer($transferStr) {
     if (empty($transferStr) || strtolower($transferStr) == 'n/a') {
@@ -203,28 +202,7 @@ function parseTransfer($transferStr) {
 }
 
 /**
- * Generates a data URI for a QR code PNG using qrencode.
- */
-function generateQRCodeDataURI($data) {
-    $tmpFile = tempnam(sys_get_temp_dir(), 'qr');
-    $pngFile = $tmpFile . '.png';
-    $cmd = 'qrencode -o ' . escapeshellarg($pngFile) . ' -t PNG ' . escapeshellarg($data);
-    exec($cmd, $output, $return_var);
-    if ($return_var !== 0 || !file_exists($pngFile)) {
-        if (file_exists($pngFile)) unlink($pngFile);
-        unlink($tmpFile);
-        return false;
-    }
-    $pngData = file_get_contents($pngFile);
-    unlink($pngFile);
-    unlink($tmpFile);
-    return 'data:image/png;base64,' . base64_encode($pngData);
-}
-
-/**
- * Parses the wg0.conf file.
- * For each [Peer] block, looks at the immediately preceding non-empty line;
- * if it starts with "###", uses it as the client's name (removing the word "Client").
+ * Parses the wg0.conf file for peers with names.
  */
 function parseWGConf($filename, &$debugLog = []) {
     if (!file_exists($filename)) {
@@ -235,7 +213,7 @@ function parseWGConf($filename, &$debugLog = []) {
     $peers = [];
     $totalLines = count($lines);
     $debugLog[] = "Total lines read: $totalLines";
-    
+
     for ($i = 0; $i < $totalLines; $i++) {
         $line = trim($lines[$i]);
         if (preg_match('/^\[Peer\]$/i', $line)) {
@@ -274,7 +252,7 @@ function parseWGConf($filename, &$debugLog = []) {
 }
 
 /**
- * Parses the output of "wg show wg0"
+ * Parses the output of "wg show wg0".
  */
 function parseWGShow($output) {
     $lines = explode("\n", $output);
@@ -297,7 +275,89 @@ function parseWGShow($output) {
     return $data;
 }
 
+function generateQRCodeDataURI($data) {
+    $tmpFile = tempnam(sys_get_temp_dir(), 'qr');
+    $pngFile = $tmpFile . '.png';
+    $cmd = 'qrencode -o ' . escapeshellarg($pngFile) . ' -t PNG ' . escapeshellarg($data);
+    exec($cmd, $out, $rv);
+    if ($rv !== 0 || !file_exists($pngFile)) {
+        if (file_exists($pngFile)) unlink($pngFile);
+        unlink($tmpFile);
+        return false;
+    }
+    $pngData = file_get_contents($pngFile);
+    unlink($pngFile);
+    unlink($tmpFile);
+    return 'data:image/png;base64,' . base64_encode($pngData);
+}
 // --- WireGuard Status Section ---
+if (isset($_GET['status'])) {
+    if (!isset($_SESSION['logged'])) {
+        http_response_code(403);
+        exit;
+    }
+    $wgConfFile = '/etc/wireguard/wg0.conf';
+    $wgShowOutput = shell_exec('sudo wg show wg0 2>&1');
+    if (empty($wgShowOutput)) {
+        $wgShowOutput = "No data available. Check permissions or if WireGuard is active.";
+    }
+    $wgShowData = parseWGShow($wgShowOutput);
+    $debugLog = [];
+    $configPeers = parseWGConf($wgConfFile, $debugLog);
+    $mergedPeers = [];
+    foreach ($wgShowData as $pubkey => $data) {
+        if (isset($configPeers[$pubkey])) {
+            $mergedPeers[$pubkey] = array_merge($configPeers[$pubkey], $data);
+        } else {
+            $mergedPeers[$pubkey] = array_merge(['Name' => ''], $data);
+        }
+    }
+    $clientConfigDir = '/root/';
+    $clientConfigFiles = glob($clientConfigDir . 'wg0-client-*.conf');
+    $clientConfigs = [];
+    foreach ($clientConfigFiles as $file) {
+        $filename = basename($file);
+        if (preg_match('/wg0-client-(.+)\.conf/i', $filename, $matches)) {
+            $clientId = strtolower($matches[1]);
+            $clientConfigs[$clientId] = ['filename' => $filename];
+        }
+    }
+    foreach ($mergedPeers as $pubkey => $peer) {
+        $name      = $peer['Name'] ?? '';
+        $endpoint  = $peer['endpoint'] ?? 'N/A';
+        $handshake = $peer['latest handshake'] ?? 'N/A';
+        $transfer  = $peer['transfer'] ?? 'N/A';
+        $totalTransfer = parseTransfer($transfer);
+
+        if ($handshake === 'N/A' || $handshake === '' || strtolower($handshake) === '0') {
+            $status = "<span class='text-danger'>Disconnected</span>";
+        } else {
+            $totalSec = handshakeToSeconds($handshake);
+            $status = ($totalSec <= 60) ? "<span class='text-success'>Connected</span>" : "<span class='text-danger'>Disconnected</span>";
+        }
+
+        $actions = "";
+        $clientId = strtolower($name);
+        if (!empty($clientId) && isset($clientConfigs[$clientId])) {
+            $cfg = $clientConfigs[$clientId];
+            $id = md5($cfg['filename']);
+            $actions .= '<button type="button" class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#viewConfigModal-' . $id . '">View Config</button> ';
+            $actions .= '<a href="?download=' . urlencode($cfg['filename']) . '" class="btn btn-accent btn-sm">Download</a> ';
+            $actions .= '<button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#qrModal-' . $id . '">Show QR</button>';
+        }
+
+        echo "<tr>
+                <td>$name</td>
+                <td>$pubkey</td>
+                <td>$endpoint</td>
+                <td>$handshake</td>
+                <td>$totalTransfer</td>
+                <td>$status</td>
+                <td>$actions</td>
+              </tr>";
+    }
+    exit;
+}
 
 // Path to wg0.conf
 $wgConfFile = '/etc/wireguard/wg0.conf';
@@ -350,8 +410,6 @@ foreach ($clientConfigFiles as $file) {
 <head>
   <meta charset="utf-8">
   <title>WireGuard Dashboard</title>
-  <!-- Auto-refresh every 5 seconds -->
-  <meta http-equiv="refresh" content="5">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { padding-top: 70px; }
@@ -519,6 +577,22 @@ foreach ($clientConfigFiles as $file) {
       document.cookie = 'accent=' + e.target.value + ';path=/;max-age=' + 60*60*24*365;
     });
   }
+</script>
+<script>
+  let refreshMs = 5000;
+  let pollId;
+  function startPoll(){
+    pollId = setInterval(() => {
+      fetch("index.php?status=1").then(r=>r.text()).then(html=>{
+        const tbody = document.querySelector("table tbody");
+        if(tbody) tbody.innerHTML = html;
+      });
+    }, refreshMs);
+  }
+  function stopPoll(){ if(pollId){ clearInterval(pollId); pollId = null; } }
+  startPoll();
+  document.addEventListener("show.bs.modal", stopPoll);
+  document.addEventListener("hidden.bs.modal", startPoll);
 </script>
 </body>
 </html>
