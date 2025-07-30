@@ -44,3 +44,14 @@ It will install WireGuard (kernel module and tools) on the server, configure it,
 17) Exit from the script
 
 - The dashboard now refreshes client status dynamically without closing modals using AJAX polling in a single index.php.
+
+## Web GUI
+
+When option 16 is enabled the web dashboard becomes reachable on port **65535**. The interface is protected by login credentials and offers several convenience features:
+
+- Login as `admin` with the password chosen during the toggle step
+- Dark/light mode toggle and selectable accent color
+- Real time client status refresh every 5 seconds
+- View, download or display the QR code of every client configuration
+- Optional debug mode by appending `?debug=1` to the URL
+
