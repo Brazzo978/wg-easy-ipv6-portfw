@@ -464,12 +464,14 @@ done
 PrivateKey = ${CLIENT_PRIV_KEY}
 Address = ${CLIENT_WG_IPV4}/32,${CLIENT_WG_IPV6}
 DNS = ${CLIENT_DNS_1},${CLIENT_DNS_2}
+MTU = 1380
 
 [Peer]
 PublicKey = ${SERVER_PUB_KEY}
 PresharedKey = ${CLIENT_PRE_SHARED_KEY}
 Endpoint = ${ENDPOINT}
-AllowedIPs = ${ALLOWED_IPS}" >"${HOME_DIR}/${SERVER_WG_NIC}-client-${CLIENT_NAME}.conf"
+AllowedIPs = ${ALLOWED_IPS}
+PersistentKeepalive = 25" >"${HOME_DIR}/${SERVER_WG_NIC}-client-${CLIENT_NAME}.conf"
 
 	# Add the client as a peer to the server
 	echo -e "\n### Client ${CLIENT_NAME}
